@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, BorderType, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use crate::app::App;
@@ -21,7 +21,8 @@ pub fn render(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Length(10),
+            Constraint::Length(9),
+            Constraint::Percentage(35),
             Constraint::Min(0),
             Constraint::Length(1),
         ])
@@ -33,7 +34,9 @@ pub fn render(f: &mut Frame, app: &App) {
         Span::raw(" / "),
         Span::styled(
             inbox.name.as_str(),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ),
     ]))
     .block(
@@ -47,14 +50,21 @@ pub fn render(f: &mut Frame, app: &App) {
     // Details block
     render_details(f, inbox, chunks[1]);
 
-    // Payload + Metadata side by side
+    render_body(f, inbox, chunks[2]);
+
+    // Payload, metadata, and attachments side by side
     let bottom_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[2]);
+        .constraints([
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+            Constraint::Percentage(33),
+        ])
+        .split(chunks[3]);
 
     render_json_block(f, "Payload", &inbox.payload, bottom_chunks[0]);
     render_json_block(f, "Metadata", &inbox.metadata, bottom_chunks[1]);
+    render_attachments(f, inbox, bottom_chunks[2]);
 
     // Status bar
     let status_text = if let Some((msg, is_error)) = &app.status {
@@ -72,7 +82,7 @@ pub fn render(f: &mut Frame, app: &App) {
     };
 
     let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Black));
-    f.render_widget(status_bar, chunks[3]);
+    f.render_widget(status_bar, chunks[4]);
 }
 
 fn render_details(f: &mut Frame, inbox: &Inbox, area: ratatui::layout::Rect) {
@@ -82,7 +92,10 @@ fn render_details(f: &mut Frame, inbox: &Inbox, area: ratatui::layout::Rect) {
     let lines = vec![
         Line::from(vec![
             Span::styled("  Name       ", label_style),
-            Span::styled(inbox.name.as_str(), value_style.add_modifier(Modifier::BOLD)),
+            Span::styled(
+                inbox.name.as_str(),
+                value_style.add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  Source     ", label_style),
@@ -91,6 +104,14 @@ fn render_details(f: &mut Frame, inbox: &Inbox, area: ratatui::layout::Rect) {
         Line::from(vec![
             Span::styled("  Summary    ", label_style),
             Span::styled(inbox.summary.as_deref().unwrap_or("—"), value_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Body       ", label_style),
+            Span::styled(if inbox.body.is_some() { "yes" } else { "no" }, value_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Attachments", label_style),
+            Span::styled(inbox.attachments.len().to_string(), value_style),
         ]),
         Line::from(vec![
             Span::styled("  Created    ", label_style),
@@ -112,6 +133,21 @@ fn render_details(f: &mut Frame, inbox: &Inbox, area: ratatui::layout::Rect) {
     f.render_widget(details, area);
 }
 
+fn render_body(f: &mut Frame, inbox: &Inbox, area: ratatui::layout::Rect) {
+    let body = inbox.body.as_deref().unwrap_or("");
+    let paragraph = Paragraph::new(body)
+        .style(Style::default().fg(Color::White))
+        .block(
+            Block::default()
+                .title(" Body ")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .wrap(Wrap { trim: false });
+    f.render_widget(paragraph, area);
+}
+
 fn render_json_block(
     f: &mut Frame,
     title: &str,
@@ -124,6 +160,41 @@ fn render_json_block(
         .block(
             Block::default()
                 .title(format!(" {} ", title))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .wrap(Wrap { trim: false });
+    f.render_widget(paragraph, area);
+}
+
+fn render_attachments(f: &mut Frame, inbox: &Inbox, area: ratatui::layout::Rect) {
+    let text = if inbox.attachments.is_empty() {
+        "(none)".to_string()
+    } else {
+        inbox
+            .attachments
+            .iter()
+            .map(|attachment| {
+                let content_type = attachment.content_type.as_deref().unwrap_or("unknown");
+                format!(
+                    "#{} {} [{}; {} bytes]\n{}",
+                    attachment.id,
+                    attachment.filename,
+                    content_type,
+                    attachment.byte_size,
+                    attachment.url
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    };
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().fg(Color::Magenta))
+        .block(
+            Block::default()
+                .title(" Attachments ")
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::DarkGray)),
