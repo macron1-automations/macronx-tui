@@ -2,89 +2,12 @@ use crossterm::event::KeyCode;
 
 use crate::api::ApiClient;
 use crate::config::Config;
-use crate::models::{CreateInboxBody, CreateInboxRequest, Inbox};
+use crate::models::Inbox;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Screen {
     InboxList,
     InboxShow,
-    InboxCreate,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum FormField {
-    Name,
-    Source,
-    Summary,
-    Payload,
-    Metadata,
-}
-
-impl FormField {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Name => "Name",
-            Self::Source => "Source",
-            Self::Summary => "Summary",
-            Self::Payload => "Payload (JSON)",
-            Self::Metadata => "Metadata (JSON)",
-        }
-    }
-
-    pub fn all() -> [FormField; 5] {
-        [
-            FormField::Name,
-            FormField::Source,
-            FormField::Summary,
-            FormField::Payload,
-            FormField::Metadata,
-        ]
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CreateForm {
-    pub name: String,
-    pub source: String,
-    pub summary: String,
-    pub payload: String,
-    pub metadata: String,
-    pub active_field: usize,
-}
-
-impl CreateForm {
-    pub fn active_value_mut(&mut self) -> &mut String {
-        match self.active_field {
-            0 => &mut self.name,
-            1 => &mut self.source,
-            2 => &mut self.summary,
-            3 => &mut self.payload,
-            4 => &mut self.metadata,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn value_for(&self, field: &FormField) -> &str {
-        match field {
-            FormField::Name => &self.name,
-            FormField::Source => &self.source,
-            FormField::Summary => &self.summary,
-            FormField::Payload => &self.payload,
-            FormField::Metadata => &self.metadata,
-        }
-    }
-
-    pub fn next_field(&mut self) {
-        self.active_field = (self.active_field + 1) % 5;
-    }
-
-    pub fn prev_field(&mut self) {
-        self.active_field = self.active_field.checked_sub(1).unwrap_or(4);
-    }
-
-    pub fn clear(&mut self) {
-        *self = CreateForm::default();
-    }
 }
 
 pub struct App {
@@ -92,7 +15,6 @@ pub struct App {
     pub inboxes: Vec<Inbox>,
     pub selected: usize,
     pub current_inbox: Option<Inbox>,
-    pub form: CreateForm,
     pub status: Option<(String, bool)>, // (message, is_error)
     pub should_quit: bool,
     pub client: ApiClient,
@@ -106,7 +28,6 @@ impl App {
             inboxes: Vec::new(),
             selected: 0,
             current_inbox: None,
-            form: CreateForm::default(),
             status: None,
             should_quit: false,
             client,
@@ -145,54 +66,6 @@ impl App {
         }
     }
 
-    pub fn submit_create_form(&mut self) {
-        let payload = match serde_json::from_str::<serde_json::Value>(&self.form.payload) {
-            Ok(v) => v,
-            Err(_) => {
-                if self.form.payload.trim().is_empty() {
-                    serde_json::Value::Object(Default::default())
-                } else {
-                    self.status = Some(("Payload is not valid JSON".to_string(), true));
-                    return;
-                }
-            }
-        };
-        let metadata = match serde_json::from_str::<serde_json::Value>(&self.form.metadata) {
-            Ok(v) => v,
-            Err(_) => {
-                if self.form.metadata.trim().is_empty() {
-                    serde_json::Value::Object(Default::default())
-                } else {
-                    self.status = Some(("Metadata is not valid JSON".to_string(), true));
-                    return;
-                }
-            }
-        };
-
-        let req = CreateInboxRequest {
-            inbox: CreateInboxBody {
-                name: self.form.name.clone(),
-                source: self.form.source.clone(),
-                summary: self.form.summary.clone(),
-                payload,
-                metadata,
-            },
-        };
-
-        match self.client.create_inbox(req) {
-            Ok(inbox) => {
-                self.form.clear();
-                self.current_inbox = Some(inbox);
-                self.screen = Screen::InboxShow;
-                self.status = Some(("Inbox created successfully".to_string(), false));
-                self.load_inboxes();
-            }
-            Err(e) => {
-                self.status = Some((format!("Error creating inbox: {}", e), true));
-            }
-        }
-    }
-
     pub fn handle_key(&mut self, key: KeyCode) {
         // Clear non-error status on any keypress
         if let Some((_, false)) = &self.status {
@@ -202,7 +75,6 @@ impl App {
         match self.screen {
             Screen::InboxList => self.handle_list_key(key),
             Screen::InboxShow => self.handle_show_key(key),
-            Screen::InboxCreate => self.handle_create_key(key),
         }
     }
 
@@ -230,11 +102,6 @@ impl App {
             KeyCode::Enter => {
                 self.open_selected_inbox();
             }
-            KeyCode::Char('n') => {
-                self.form.clear();
-                self.screen = Screen::InboxCreate;
-                self.status = None;
-            }
             KeyCode::Char('r') => {
                 self.load_inboxes();
             }
@@ -247,32 +114,6 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Backspace => {
                 self.screen = Screen::InboxList;
                 self.status = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_create_key(&mut self, key: KeyCode) {
-        match key {
-            KeyCode::Esc => {
-                self.form.clear();
-                self.screen = Screen::InboxList;
-                self.status = None;
-            }
-            KeyCode::Tab => {
-                self.form.next_field();
-            }
-            KeyCode::BackTab => {
-                self.form.prev_field();
-            }
-            KeyCode::Enter => {
-                self.submit_create_form();
-            }
-            KeyCode::Backspace => {
-                self.form.active_value_mut().pop();
-            }
-            KeyCode::Char(c) => {
-                self.form.active_value_mut().push(c);
             }
             _ => {}
         }

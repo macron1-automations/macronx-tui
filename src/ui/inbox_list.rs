@@ -21,11 +21,10 @@ pub fn render(f: &mut Frame, app: &App) {
         .split(area);
 
     // Title
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled("Macronx", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(" / "),
-        Span::styled("Inboxes", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-    ]))
+    let title = Paragraph::new(Line::from(Span::styled(
+        "Inbox",
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    )))
     .block(
         Block::default()
             .borders(Borders::ALL)
@@ -40,7 +39,6 @@ pub fn render(f: &mut Frame, app: &App) {
         .add_modifier(Modifier::BOLD);
     let header = Row::new(vec![
         Cell::from("NAME").style(header_style),
-        Cell::from("SOURCE").style(header_style),
         Cell::from("SUMMARY").style(header_style),
         Cell::from("CREATED").style(header_style),
     ])
@@ -52,7 +50,6 @@ pub fn render(f: &mut Frame, app: &App) {
         .map(|inbox| {
             Row::new(vec![
                 Cell::from(inbox.name.as_str()),
-                Cell::from(inbox.source.as_str()),
                 Cell::from(inbox.summary.as_deref().unwrap_or("")),
                 Cell::from(format_date(&inbox.created_at)),
             ])
@@ -60,10 +57,9 @@ pub fn render(f: &mut Frame, app: &App) {
         .collect();
 
     let widths = [
-        Constraint::Percentage(25),
-        Constraint::Percentage(20),
-        Constraint::Percentage(35),
-        Constraint::Percentage(20),
+        Constraint::Percentage(30),
+        Constraint::Percentage(40),
+        Constraint::Percentage(30),
     ];
 
     let table = Table::new(rows, widths)
@@ -102,8 +98,6 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw("Navigate  "),
             Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
             Span::raw("Open  "),
-            Span::styled("[n] ", Style::default().fg(Color::Cyan)),
-            Span::raw("New  "),
             Span::styled("[r] ", Style::default().fg(Color::Cyan)),
             Span::raw("Refresh  "),
             Span::styled("[q] ", Style::default().fg(Color::Cyan)),

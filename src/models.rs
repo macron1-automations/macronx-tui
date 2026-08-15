@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Inbox {
@@ -42,18 +42,4 @@ where
     D: serde::Deserializer<'de>,
 {
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
-}
-
-#[derive(Debug, Serialize)]
-pub struct CreateInboxRequest {
-    pub inbox: CreateInboxBody,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CreateInboxBody {
-    pub name: String,
-    pub source: String,
-    pub summary: String,
-    pub payload: serde_json::Value,
-    pub metadata: serde_json::Value,
 }
