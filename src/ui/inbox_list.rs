@@ -1,9 +1,9 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, BorderType, Cell, Paragraph, Row, Table, TableState},
+    widgets::{Block, Borders, BorderType, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
 };
 
 use crate::app::App;
@@ -33,6 +33,13 @@ pub fn render(f: &mut Frame, app: &App) {
     );
     f.render_widget(title, chunks[0]);
 
+    let content = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(24), Constraint::Min(0)])
+        .split(chunks[1]);
+
+    render_sidebar(f, app, content[0]);
+
     // Table
     let header_style = Style::default()
         .fg(Color::Yellow)
@@ -45,9 +52,10 @@ pub fn render(f: &mut Frame, app: &App) {
     .height(1);
 
     let rows: Vec<Row> = app
-        .inboxes
+        .filtered
         .iter()
-        .map(|inbox| {
+        .map(|&idx| {
+            let inbox = &app.inboxes[idx];
             Row::new(vec![
                 Cell::from(inbox.name.as_str()),
                 Cell::from(inbox.summary.as_deref().unwrap_or("")),
@@ -62,6 +70,12 @@ pub fn render(f: &mut Frame, app: &App) {
         Constraint::Percentage(30),
     ];
 
+    let title_text = if app.filtered.len() < app.inboxes.len() {
+        format!(" {} / {} inboxes ", app.filtered.len(), app.inboxes.len())
+    } else {
+        format!(" {} inboxes ", app.inboxes.len())
+    };
+
     let table = Table::new(rows, widths)
         .header(header)
         .block(
@@ -69,7 +83,7 @@ pub fn render(f: &mut Frame, app: &App) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::DarkGray))
-                .title(format!(" {} inboxes ", app.inboxes.len())),
+                .title(title_text),
         )
         .highlight_style(
             Style::default()
@@ -79,10 +93,10 @@ pub fn render(f: &mut Frame, app: &App) {
         .highlight_symbol(" > ");
 
     let mut state = TableState::default();
-    if !app.inboxes.is_empty() {
+    if !app.filtered.is_empty() {
         state.select(Some(app.selected));
     }
-    f.render_stateful_widget(table, chunks[1], &mut state);
+    f.render_stateful_widget(table, content[1], &mut state);
 
     // Status bar
     let status_text = if let Some((msg, is_error)) = &app.status {
@@ -96,6 +110,8 @@ pub fn render(f: &mut Frame, app: &App) {
         Line::from(vec![
             Span::styled(" [j/k] ", Style::default().fg(Color::Cyan)),
             Span::raw("Navigate  "),
+            Span::styled("[Shift+J/K] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Tags  "),
             Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
             Span::raw("Open  "),
             Span::styled("[r] ", Style::default().fg(Color::Cyan)),
@@ -108,6 +124,56 @@ pub fn render(f: &mut Frame, app: &App) {
     let status_bar = Paragraph::new(status_text)
         .style(Style::default().bg(Color::Black));
     f.render_widget(status_bar, chunks[2]);
+}
+
+fn render_sidebar(f: &mut Frame, app: &App, area: Rect) {
+    let mut items: Vec<ListItem> = Vec::with_capacity(app.tags.len() + 1);
+
+    items.push(ListItem::new(Line::from(Span::styled(
+        "All",
+        Style::default().fg(Color::Cyan),
+    ))));
+
+    for tag in &app.tags {
+        items.push(ListItem::new(Line::from(Span::styled(
+            tag.name.clone(),
+            Style::default().fg(tag_color(tag.color.as_deref())),
+        ))));
+    }
+
+    let sidebar = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(format!(" {} tags ", app.tags.len())),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(" > ");
+
+    let mut state = ListState::default();
+    state.select(Some(app.tag_offset()));
+    f.render_stateful_widget(sidebar, area, &mut state);
+}
+
+fn tag_color(color: Option<&str>) -> Color {
+    let color = color.map(|c| c.to_lowercase());
+    match color.as_deref() {
+        Some(c) if c.contains("purple") || c.contains("violet") => Color::Magenta,
+        Some(c) if c.contains("blue") || c.contains("indigo") => Color::Blue,
+        Some(c) if c.contains("green") || c.contains("emerald") => Color::Green,
+        Some(c) if c.contains("red") || c.contains("rose") => Color::Red,
+        Some(c) if c.contains("orange") || c.contains("amber") => Color::Yellow,
+        Some(c) if c.contains("pink") => Color::LightMagenta,
+        Some(c) if c.contains("cyan") || c.contains("teal") => Color::Cyan,
+        Some(c) if c.contains("gray") || c.contains("grey") => Color::DarkGray,
+        _ => Color::White,
+    }
 }
 
 fn format_date(s: &str) -> String {

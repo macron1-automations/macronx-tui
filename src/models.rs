@@ -8,6 +8,8 @@ pub struct Inbox {
     #[serde(default, deserialize_with = "null_to_default")]
     pub source: String,
     #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default)]
     pub summary: Option<String>,
     #[serde(default)]
     pub body: Option<String>,
@@ -35,6 +37,14 @@ pub struct Attachment {
     pub byte_size: u64,
     #[serde(default, deserialize_with = "null_to_default")]
     pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Tag {
+    #[serde(default, deserialize_with = "null_to_default")]
+    pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 fn null_to_default<'de, D>(deserializer: D) -> Result<String, D::Error>

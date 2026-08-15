@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use reqwest::header::{self, HeaderMap, HeaderValue};
 
-use crate::models::Inbox;
+use crate::models::{Inbox, Tag};
 
 pub struct ApiClient {
     client: Client,
@@ -40,6 +40,21 @@ impl ApiClient {
         }
 
         parse_json_response(resp, "inboxes")
+    }
+
+    pub fn list_tags(&self) -> Result<Vec<Tag>> {
+        let url = format!("{}/api/v1/tags", self.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .context("Failed to connect to API")?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("API returned {}", resp.status());
+        }
+
+        parse_json_response(resp, "tags")
     }
 
     pub fn get_inbox(&self, id: u64) -> Result<Inbox> {

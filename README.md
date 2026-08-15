@@ -35,6 +35,8 @@ cargo run
 | `k` / `Up` | Move up |
 | `g` | Jump to first inbox |
 | `G` | Jump to last inbox |
+| `Shift+J` | Filter by next tag |
+| `Shift+K` | Filter by previous tag |
 | `Enter` | Open selected inbox |
 | `r` | Refresh inboxes |
 | `Esc` / `Backspace` | Return from detail screen |
