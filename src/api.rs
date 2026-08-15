@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use reqwest::header::{self, HeaderMap, HeaderValue};
 
-use crate::models::{CreateInboxRequest, Inbox};
+use crate::models::Inbox;
 
 pub struct ApiClient {
     client: Client,
@@ -55,24 +55,6 @@ impl ApiClient {
         }
 
         parse_json_response(resp, "inbox")
-    }
-
-    pub fn create_inbox(&self, req: CreateInboxRequest) -> Result<Inbox> {
-        let url = format!("{}/api/v1/inboxes", self.base_url);
-        let resp = self
-            .client
-            .post(&url)
-            .json(&req)
-            .send()
-            .context("Failed to connect to API")?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!("API returned {}: {}", status, body);
-        }
-
-        parse_json_response(resp, "created inbox")
     }
 }
 

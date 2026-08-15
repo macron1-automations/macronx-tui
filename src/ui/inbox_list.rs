@@ -102,8 +102,6 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw("Navigate  "),
             Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
             Span::raw("Open  "),
-            Span::styled("[n] ", Style::default().fg(Color::Cyan)),
-            Span::raw("New  "),
             Span::styled("[r] ", Style::default().fg(Color::Cyan)),
             Span::raw("Refresh  "),
             Span::styled("[q] ", Style::default().fg(Color::Cyan)),

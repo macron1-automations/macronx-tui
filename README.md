@@ -2,7 +2,7 @@
 
 A terminal user interface counterpart to [macronx](https://github.com/ninja-in-brazil/macronx).
 
-`macronx-tui` is designed for fast, keyboard-driven work against Macronx. The initial focus is inbox workflows: listing inboxes, inspecting inbox details, refreshing the inbox list, and creating new inbox entries with JSON payload and metadata.
+`macronx-tui` is designed for fast, keyboard-driven work against Macronx. The initial focus is inbox workflows: listing inboxes, inspecting inbox details, and refreshing the inbox list.
 
 ## Status
 
@@ -35,11 +35,9 @@ cargo run
 | `k` / `Up` | Move up |
 | `g` | Jump to first inbox |
 | `G` | Jump to last inbox |
-| `Enter` | Open selected inbox or submit the create form |
-| `n` | Create a new inbox |
+| `Enter` | Open selected inbox |
 | `r` | Refresh inboxes |
-| `Tab` / `Shift+Tab` | Move between create form fields |
-| `Esc` / `Backspace` | Return from detail/create screens |
+| `Esc` / `Backspace` | Return from detail screen |
 | `q` | Quit |
 
 ## Terminal Performance

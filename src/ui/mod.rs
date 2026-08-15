@@ -1,4 +1,3 @@
-mod inbox_create;
 mod inbox_list;
 mod inbox_show;
 
@@ -10,10 +9,5 @@ pub fn render(f: &mut Frame, app: &App) {
     match app.screen {
         Screen::InboxList => inbox_list::render(f, app),
         Screen::InboxShow => inbox_show::render(f, app),
-        Screen::InboxCreate => {
-            // Render list underneath, then overlay the create form
-            inbox_list::render(f, app);
-            inbox_create::render(f, app);
-        }
     }
 }
