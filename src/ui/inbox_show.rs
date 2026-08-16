@@ -155,9 +155,12 @@ fn style_markdown(text: &str, width: usize) -> Vec<Line<'static>> {
             continue;
         }
 
-        let style = if in_code {
-            &code_style
-        } else if is_heading(trimmed) {
+        if in_code {
+            push_wrapped(&mut out, raw, width, &code_style);
+            continue;
+        }
+
+        let style = if is_heading(trimmed) {
             &heading_style
         } else if trimmed.starts_with('>') {
             &quote_style
@@ -165,7 +168,7 @@ fn style_markdown(text: &str, width: usize) -> Vec<Line<'static>> {
             &plain_style
         };
 
-        push_wrapped(&mut out, raw, width, style);
+        push_styled(&mut out, raw, width, style);
     }
 
     out
@@ -175,6 +178,114 @@ fn push_wrapped(out: &mut Vec<Line<'static>>, raw: &str, width: usize, style: &S
     for piece in wrap_text(raw, width) {
         out.push(Line::styled(piece, *style));
     }
+}
+
+fn push_styled(out: &mut Vec<Line<'static>>, raw: &str, width: usize, style: &Style) {
+    if raw.is_empty() {
+        out.push(Line::from(""));
+        return;
+    }
+    let segments = parse_bold(raw);
+    for tokens in wrap_segments(&segments, width) {
+        out.push(line_from_tokens(tokens, *style));
+    }
+}
+
+fn parse_bold(text: &str) -> Vec<(String, bool)> {
+    let mut segments = Vec::new();
+    let mut rest = text;
+    loop {
+        match rest.split_once("**") {
+            Some((before, after)) => {
+                push_segment(&mut segments, before, false);
+                match after.split_once("**") {
+                    Some((bold, remaining)) => {
+                        push_segment(&mut segments, bold, true);
+                        rest = remaining;
+                    }
+                    None => {
+                        push_segment(&mut segments, "**", false);
+                        rest = after;
+                    }
+                }
+            }
+            None => {
+                push_segment(&mut segments, rest, false);
+                break;
+            }
+        }
+    }
+    segments
+}
+
+fn push_segment(segments: &mut Vec<(String, bool)>, text: &str, bold: bool) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some((last, last_bold)) = segments.last_mut() {
+        if *last_bold == bold {
+            last.push_str(text);
+            return;
+        }
+    }
+    segments.push((text.to_string(), bold));
+}
+
+fn wrap_segments(segments: &[(String, bool)], width: usize) -> Vec<Vec<(String, bool)>> {
+    if width == 0 {
+        return vec![segments.to_vec()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current: Vec<(String, bool)> = Vec::new();
+    let mut current_width = 0usize;
+
+    for (text, bold) in segments {
+        for token in text.split_inclusive(char::is_whitespace) {
+            let token_width = token.width();
+            if current_width + token_width > width && current_width > 0 {
+                lines.push(std::mem::take(&mut current));
+                current_width = 0;
+            }
+            if token_width > width && current_width == 0 {
+                let mut chunk = String::new();
+                let mut chunk_width = 0usize;
+                for ch in token.chars() {
+                    let ch_width = ch.width().unwrap_or(0);
+                    if chunk_width + ch_width > width && chunk_width > 0 {
+                        lines.push(vec![(std::mem::take(&mut chunk), *bold)]);
+                        chunk_width = 0;
+                    }
+                    chunk.push(ch);
+                    chunk_width += ch_width;
+                }
+                current.push((chunk, *bold));
+                current_width = chunk_width;
+            } else {
+                current.push((token.to_string(), *bold));
+                current_width += token_width;
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+fn line_from_tokens(tokens: Vec<(String, bool)>, base: Style) -> Line<'static> {
+    let spans: Vec<Span<'static>> = tokens
+        .into_iter()
+        .map(|(text, bold)| {
+            if bold {
+                Span::styled(text, base.add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled(text, base)
+            }
+        })
+        .collect();
+    Line::from(spans)
 }
 
 fn is_code_fence(line: &str) -> bool {
