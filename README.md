@@ -40,6 +40,11 @@ cargo run
 | `Enter` | Open selected inbox |
 | `r` | Refresh inboxes |
 | `Esc` / `Backspace` | Return from detail screen |
+| `j` / `Down` | Scroll body down |
+| `k` / `Up` | Scroll body up |
+| `PgUp` / `PgDn` | Scroll body by page |
+| `g` | Scroll body to top |
+| `G` | Scroll body to bottom |
 | `q` | Quit |
 
 ## Terminal Performance
