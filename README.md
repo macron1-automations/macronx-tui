@@ -40,7 +40,26 @@ cargo run
 | `Enter` | Open selected inbox |
 | `r` | Refresh inboxes |
 | `Esc` / `Backspace` | Return from detail screen |
+| `j` / `Down` | Scroll body down |
+| `k` / `Up` | Scroll body up |
+| `PgUp` / `PgDn` | Scroll body by page |
+| `g` | Scroll body to top |
+| `G` | Scroll body to bottom |
 | `q` | Quit |
+
+## Body Markdown Rendering
+
+The detail screen renders the inbox body with a small, dependency-free markdown parser (`src/ui/inbox_show.rs`). It is intentionally light and covers the common cases:
+
+- **Headings** — lines starting with `#` (optionally indented) render bold and yellow.
+- **Fenced code blocks** — lines between ` ``` ` or `~~~` fences render green. `**` inside code is treated literally, so markup stays readable.
+- **Blockquotes** — lines starting with `>` render blue.
+- **Inline bold** — text wrapped in `**…**` renders bold and the `**` markers are removed, e.g. `this is **important**` shows as: this is **important**.
+- **Everything else** — plain white text.
+
+Inline `**` is parsed before word-wrapping, so an emphasized phrase that wraps across two rows stays bold with no markers reappearing at the seam. An unmatched `**` (no closing pair on the same line) is shown literally. The raw `#`, `>`, and fence markers stay visible; only `**` is stripped.
+
+Word-wrapping is width-aware (via `unicode-width`), and the body scrolls vertically with `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`.
 
 ## Terminal Performance
 

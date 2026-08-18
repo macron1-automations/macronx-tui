@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crossterm::event::KeyCode;
+use tui_scrollview::ScrollViewState;
 
 use crate::api::ApiClient;
 use crate::config::Config;
@@ -20,6 +21,7 @@ pub struct App {
     pub filtered: Vec<usize>,        // indices into `inboxes` matching the active tag
     pub selected: usize,
     pub current_inbox: Option<Inbox>,
+    pub body_scroll: ScrollViewState,
     pub status: Option<(String, bool)>, // (message, is_error)
     pub should_quit: bool,
     pub client: ApiClient,
@@ -36,6 +38,7 @@ impl App {
             filtered: Vec::new(),
             selected: 0,
             current_inbox: None,
+            body_scroll: ScrollViewState::new(),
             status: None,
             should_quit: false,
             client,
@@ -63,6 +66,7 @@ impl App {
         match self.client.get_inbox(id) {
             Ok(inbox) => {
                 self.current_inbox = Some(inbox);
+                self.body_scroll.scroll_to_top();
                 self.screen = Screen::InboxShow;
                 self.status = None;
             }
@@ -126,6 +130,24 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Backspace => {
                 self.screen = Screen::InboxList;
                 self.status = None;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.body_scroll.scroll_down();
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.body_scroll.scroll_up();
+            }
+            KeyCode::PageDown => {
+                self.body_scroll.scroll_page_down();
+            }
+            KeyCode::PageUp => {
+                self.body_scroll.scroll_page_up();
+            }
+            KeyCode::Char('g') => {
+                self.body_scroll.scroll_to_top();
+            }
+            KeyCode::Char('G') => {
+                self.body_scroll.scroll_to_bottom();
             }
             _ => {}
         }
