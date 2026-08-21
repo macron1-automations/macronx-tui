@@ -4,6 +4,7 @@ use reqwest::header::{self, HeaderMap, HeaderValue};
 
 use crate::models::{Inbox, Tag};
 
+#[derive(Clone)]
 pub struct ApiClient {
     client: Client,
     base_url: String,
@@ -70,6 +71,21 @@ impl ApiClient {
         }
 
         parse_json_response(resp, "inbox")
+    }
+
+    pub fn fetch_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .context("Failed to download attachment")?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Download returned {}", resp.status());
+        }
+
+        let bytes = resp.bytes().context("Failed to read attachment data")?;
+        Ok(bytes.to_vec())
     }
 }
 

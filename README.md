@@ -40,12 +40,39 @@ cargo run
 | `Enter` | Open selected inbox |
 | `r` | Refresh inboxes |
 | `Esc` / `Backspace` | Return from detail screen |
-| `j` / `Down` | Scroll body down |
-| `k` / `Up` | Scroll body up |
+| `j` / `Down` | Scroll body down (or move attachment selection when sidebar is focused) |
+| `k` / `Up` | Scroll body up (or move attachment selection when sidebar is focused) |
 | `PgUp` / `PgDn` | Scroll body by page |
 | `g` | Scroll body to top |
 | `G` | Scroll body to bottom |
+| `Tab` | Toggle focus between body and sidebar |
+| `Shift+Tab` / `h` / `l` | Switch sidebar tab (Metadata / Attachments) |
+| `f` | Open fullscreen image viewer for the attached image |
+| `o` | Open selected attachment with the system's default app (also works in the image viewer) |
+| `space` | Play / pause attached audio |
+| `←` / `→` | Seek audio ±5s (or switch sidebar tab when no audio is loaded) |
+| `+` / `-` | Audio volume |
 | `q` | Quit |
+
+## Detail View Sidebar
+
+The detail view splits the body area into a main scrollable column (~80%) and a sidebar (~20%). The sidebar has two tabs:
+
+- **Metadata** — id, source, tag, creation time, attachment count, and summary.
+- **Attachments** — list of files with type tag (`[IMG]`, `[AUD]`, `[FILE]`) and size. Selecting an image lazily downloads and previews it inline; selecting an audio file shows an inline mini-player with elapsed/total time, a waveform overview with playhead, and a live level visualization.
+
+### Image Viewer
+
+Pressing `f` anywhere in the detail view opens the attached image fullscreen (fit to screen). Then:
+
+- `o` opens the original file with the system's default image app
+- `f` or `Esc` closes
+
+Images render through native terminal graphics protocols (Kitty, iTerm2, Sixel) via `ratatui-image`, falling back to unicode halfblocks on terminals without graphics support.
+
+### Inline Audio Playback
+
+Pressing `space` anywhere in the detail view plays/pauses the attached audio via `rodio`. While playing, `←`/`→` seek ±5 seconds and `+`/`-` adjust volume. Playback continues while browsing tabs and stops when leaving the inbox.
 
 ## Body Markdown Rendering
 

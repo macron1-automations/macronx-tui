@@ -1,5 +1,6 @@
 mod api;
 mod app;
+mod audio;
 mod config;
 mod models;
 mod ui;
@@ -13,6 +14,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui_image::picker::Picker;
 
 use app::App;
 use config::Config;
@@ -28,6 +30,11 @@ fn main() -> anyhow::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+
+    // Query the terminal for font size and graphics protocol support.
+    // Must happen after entering the alternate screen but before reading events.
+    app.set_picker(create_picker());
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -50,20 +57,46 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn create_picker() -> Picker {
+    let mut picker = Picker::from_termios().unwrap_or_else(|_| Picker::new((10, 20)));
+    picker.guess_protocol();
+    picker
+}
+
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
+        app.poll_viewer_encode();
+
         terminal.draw(|f| ui::render(f, app))?;
 
         if app.should_quit {
             return Ok(());
         }
 
-        if event::poll(Duration::from_millis(200))? {
+        app.poll_downloads();
+
+        let timeout = if app.needs_fast_poll() {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(200)
+        };
+
+        if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 // Only handle key press events (not release/repeat on Windows)
+                if key.kind == KeyEventKind::Press {
+                    app.handle_key(key.code);
+                }
+            }
+        }
+
+        // Drain any additional pending key events so held-down keys coalesce
+        // into a single state update (and thus one redraw) per frame.
+        while event::poll(Duration::ZERO)? {
+            if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     app.handle_key(key.code);
                 }

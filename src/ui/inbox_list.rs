@@ -1,9 +1,12 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, BorderType, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
+    widgets::{
+        Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table,
+        TableState,
+    },
+    Frame,
 };
 
 use crate::app::App;
@@ -23,7 +26,9 @@ pub fn render(f: &mut Frame, app: &App) {
     // Title
     let title = Paragraph::new(Line::from(Span::styled(
         "Inbox",
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     )))
     .block(
         Block::default()
@@ -121,8 +126,7 @@ pub fn render(f: &mut Frame, app: &App) {
         ])
     };
 
-    let status_bar = Paragraph::new(status_text)
-        .style(Style::default().bg(Color::Black));
+    let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Black));
     f.render_widget(status_bar, chunks[2]);
 }
 
@@ -179,7 +183,9 @@ fn tag_color(color: Option<&str>) -> Color {
 fn format_date(s: &str) -> String {
     // "2026-06-12T20:40:00.000Z" → "Jun 12, 2026"
     if s.len() >= 10 {
-        let date = &s[..10];
+        let Some(date) = s.get(..10) else {
+            return s.to_string();
+        };
         let parts: Vec<&str> = date.split('-').collect();
         if parts.len() == 3 {
             let month = match parts[1] {
