@@ -1,9 +1,12 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, BorderType, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
+    widgets::{
+        Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table,
+        TableState,
+    },
+    Frame,
 };
 
 use crate::app::App;
@@ -23,7 +26,9 @@ pub fn render(f: &mut Frame, app: &App) {
     // Title
     let title = Paragraph::new(Line::from(Span::styled(
         "Inbox",
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     )))
     .block(
         Block::default()
@@ -121,8 +126,7 @@ pub fn render(f: &mut Frame, app: &App) {
         ])
     };
 
-    let status_bar = Paragraph::new(status_text)
-        .style(Style::default().bg(Color::Black));
+    let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Black));
     f.render_widget(status_bar, chunks[2]);
 }
 

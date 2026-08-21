@@ -11,6 +11,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::app::App;
 use crate::models::Inbox;
 
+use super::{image_viewer, sidebar};
+
 pub fn render(f: &mut Frame, app: &mut App) {
     let inbox = match &app.current_inbox {
         Some(i) => i,
@@ -51,7 +53,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Details block
     render_details(f, inbox, chunks[1]);
 
-    render_body(f, inbox, chunks[2], &mut app.body_scroll);
+    // Body + sidebar: scrollable content shrinks by ~20% for the sidebar.
+    let body_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
+        .split(chunks[2]);
+
+    render_body(f, inbox, body_chunks[0], &mut app.body_scroll);
+    sidebar::render(f, app, body_chunks[1]);
 
     // Status bar
     let status_text = if let Some((msg, is_error)) = &app.status {
@@ -63,17 +72,26 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Line::from(Span::styled(format!(" {}", msg), style))
     } else {
         Line::from(vec![
-            Span::styled(" [j/k] ", Style::default().fg(Color::Cyan)),
+            Span::styled("[j/k] ", Style::default().fg(Color::Cyan)),
             Span::raw("Scroll  "),
-            Span::styled("[PgUp/PgDn] ", Style::default().fg(Color::Cyan)),
-            Span::raw("Page  "),
-            Span::styled("[Esc/q] ", Style::default().fg(Color::Cyan)),
-            Span::raw("Back to list"),
+            Span::styled("[Tab] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Sidebar  "),
+            Span::styled("[f] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Image  "),
+            Span::styled("[space] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Audio  "),
+            Span::styled("[Esc] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Back"),
         ])
     };
 
     let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Black));
     f.render_widget(status_bar, chunks[3]);
+
+    // Fullscreen image viewer overlays everything.
+    if app.viewer.is_some() {
+        image_viewer::render(f, app);
+    }
 }
 
 fn render_details(f: &mut Frame, inbox: &Inbox, area: Rect) {
@@ -105,12 +123,7 @@ fn render_details(f: &mut Frame, inbox: &Inbox, area: Rect) {
     f.render_widget(details, area);
 }
 
-fn render_body(
-    f: &mut Frame,
-    inbox: &Inbox,
-    area: Rect,
-    state: &mut ScrollViewState,
-) {
+fn render_body(f: &mut Frame, inbox: &Inbox, area: Rect, state: &mut ScrollViewState) {
     let block = Block::default()
         .title(" Body ")
         .borders(Borders::ALL)
@@ -294,8 +307,7 @@ fn is_code_fence(line: &str) -> bool {
 
 fn is_heading(line: &str) -> bool {
     let hashes = line.chars().take_while(|&c| c == '#').count();
-    hashes > 0
-        && (line.chars().nth(hashes) == Some(' ') || hashes == line.chars().count())
+    hashes > 0 && (line.chars().nth(hashes) == Some(' ') || hashes == line.chars().count())
 }
 
 fn wrap_text(line: &str, width: usize) -> Vec<String> {
