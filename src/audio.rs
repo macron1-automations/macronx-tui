@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use rodio::source::SeekError;
 use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 
 /// Number of amplitude buckets kept for the live visualization history.
@@ -75,6 +76,13 @@ impl<S: Source<Item = f32>> Source for VizTap<S> {
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
     }
+
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+        self.inner.try_seek(pos)?;
+        self.window_peak = 0.0;
+        self.window_remaining = LEVEL_WINDOW;
+        Ok(())
+    }
 }
 
 /// An audio attachment loaded for inline playback with live visualization.
@@ -98,7 +106,13 @@ impl AudioPlayer {
         let peaks = Arc::new(compute_peaks(&bytes)?);
         let viz = Arc::new(VizState::default());
 
-        let source = Decoder::try_from(Cursor::new(bytes)).context("Unsupported audio format")?;
+        let byte_len = bytes.len() as u64;
+        let source = Decoder::builder()
+            .with_data(Cursor::new(bytes))
+            .with_byte_len(byte_len)
+            .with_seekable(true)
+            .build()
+            .context("Unsupported audio format")?;
         let duration = source.total_duration();
 
         let tap = VizTap {
@@ -135,15 +149,15 @@ impl AudioPlayer {
         self.player.get_pos()
     }
 
-    pub fn seek_by(&self, delta: Duration) {
-        let pos = self.position();
-        let target = if delta.is_zero() {
-            return;
-        } else if pos + delta > pos {
-            pos + delta
-        } else {
-            Duration::ZERO
-        };
+    pub fn seek_forward(&self, delta: Duration) {
+        self.seek_to(self.position().saturating_add(delta));
+    }
+
+    pub fn seek_back(&self, delta: Duration) {
+        self.seek_to(self.position().saturating_sub(delta));
+    }
+
+    fn seek_to(&self, target: Duration) {
         let clamped = match self.duration {
             Some(total) if target > total => total,
             _ => target,
@@ -161,8 +175,12 @@ impl AudioPlayer {
 }
 
 fn compute_peaks(bytes: &[u8]) -> Result<Vec<f32>> {
-    let decoder =
-        Decoder::try_from(Cursor::new(bytes.to_vec())).context("Unsupported audio format")?;
+    let decoder = Decoder::builder()
+        .with_data(Cursor::new(bytes.to_vec()))
+        .with_byte_len(bytes.len() as u64)
+        .with_seekable(true)
+        .build()
+        .context("Unsupported audio format")?;
     let channels = decoder.channels().get().max(1) as usize;
 
     let mut peaks = Vec::new();

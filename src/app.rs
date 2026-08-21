@@ -395,7 +395,7 @@ impl App {
             }
             KeyCode::Left => {
                 if let Some(audio) = &self.audio {
-                    audio.seek_by(std::time::Duration::from_secs(5));
+                    audio.seek_back(std::time::Duration::from_secs(5));
                 } else if self.focus == Focus::Sidebar {
                     self.sidebar_tab = self.sidebar_tab.next();
                     self.on_tab_entered();
@@ -403,7 +403,7 @@ impl App {
             }
             KeyCode::Right => {
                 if let Some(audio) = &self.audio {
-                    audio.seek_by(std::time::Duration::from_secs(5));
+                    audio.seek_forward(std::time::Duration::from_secs(5));
                 } else if self.focus == Focus::Sidebar {
                     self.sidebar_tab = self.sidebar_tab.next();
                     self.on_tab_entered();
