@@ -90,8 +90,9 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn load(attachment_id: u64, bytes: Vec<u8>) -> Result<Self> {
-        let sink =
+        let mut sink =
             DeviceSinkBuilder::open_default_sink().context("No audio output device available")?;
+        sink.log_on_drop(false);
         let player = Player::connect_new(sink.mixer());
 
         let peaks = Arc::new(compute_peaks(&bytes)?);
