@@ -183,7 +183,9 @@ fn tag_color(color: Option<&str>) -> Color {
 fn format_date(s: &str) -> String {
     // "2026-06-12T20:40:00.000Z" → "Jun 12, 2026"
     if s.len() >= 10 {
-        let date = &s[..10];
+        let Some(date) = s.get(..10) else {
+            return s.to_string();
+        };
         let parts: Vec<&str> = date.split('-').collect();
         if parts.len() == 3 {
             let month = match parts[1] {

@@ -661,7 +661,8 @@ impl App {
     }
 
     pub fn needs_fast_poll(&self) -> bool {
-        if !self.pending_downloads.is_empty() || self.pending_play.is_some()
+        if !self.pending_downloads.is_empty()
+            || self.pending_play.is_some()
             || self.viewer_pending.is_some()
         {
             return true;

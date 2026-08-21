@@ -359,8 +359,9 @@ fn wrap_text(line: &str, width: usize) -> Vec<String> {
 fn format_datetime(s: &str) -> String {
     // "2026-06-12T20:40:00.000Z" → "June 12, 2026 at 20:40 UTC"
     if s.len() >= 16 {
-        let date = &s[..10];
-        let time = &s[11..16];
+        let (Some(date), Some(time)) = (s.get(..10), s.get(11..16)) else {
+            return s.to_string();
+        };
         let parts: Vec<&str> = date.split('-').collect();
         if parts.len() == 3 {
             let month = match parts[1] {

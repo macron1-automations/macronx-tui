@@ -283,17 +283,16 @@ fn render_audio_panel(f: &mut Frame, app: &mut App, att: &Attachment, area: Rect
     let playhead_col = ((progress * width as f64) as usize).min(width.saturating_sub(1));
 
     for row in waveform_rows(&peaks, width, 3) {
-        let played_cols = playhead_col.min(row.len());
-        let mut spans = Vec::with_capacity(3);
-        if played_cols > 0 {
-            spans.push(Span::styled(
-                row[..played_cols].to_string(),
-                Style::default().fg(Color::Cyan),
-            ));
+        let played_cols = playhead_col.min(row.chars().count());
+        let played: String = row.chars().take(played_cols).collect();
+        let remaining: String = row.chars().skip(played_cols).collect();
+        let mut spans = Vec::with_capacity(2);
+        if !played.is_empty() {
+            spans.push(Span::styled(played, Style::default().fg(Color::Cyan)));
         }
-        if played_cols < row.len() {
+        if !remaining.is_empty() {
             spans.push(Span::styled(
-                row[played_cols..].to_string(),
+                remaining,
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -445,8 +444,46 @@ fn centered_top(area: Rect) -> Rect {
 
 fn format_datetime_short(s: &str) -> String {
     if s.len() >= 16 {
-        format!("{} {}", &s[..10], &s[11..16])
-    } else {
-        s.to_string()
+        if let (Some(date), Some(time)) = (s.get(..10), s.get(11..16)) {
+            return format!("{} {}", date, time);
+        }
+    }
+    s.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn waveform_rows_have_one_char_per_column() {
+        let peaks: Vec<f32> = (0..100).map(|i| i as f32 / 100.0).collect();
+        for width in [1usize, 2, 7, 20, 55] {
+            for row in waveform_rows(&peaks, width, 3) {
+                assert_eq!(row.chars().count(), width);
+            }
+        }
+    }
+
+    #[test]
+    fn playhead_split_at_every_column_is_char_safe() {
+        let peaks: Vec<f32> = vec![0.9, 0.1, 0.5, 1.0, 0.3];
+        for width in [1usize, 3, 8, 40] {
+            for row in waveform_rows(&peaks, width, 3) {
+                for col in 0..=row.chars().count() {
+                    let played: String = row.chars().take(col).collect();
+                    let remaining: String = row.chars().skip(col).collect();
+                    assert_eq!(played.chars().count() + remaining.chars().count(), width);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn empty_peaks_produce_blank_rows() {
+        for row in waveform_rows(&[], 10, 3) {
+            assert_eq!(row.chars().count(), 10);
+            assert!(row.chars().all(|c| c == ' '));
+        }
     }
 }
