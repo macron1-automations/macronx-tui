@@ -68,6 +68,8 @@ fn run_app(
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
+        app.poll_viewer_encode();
+
         terminal.draw(|f| ui::render(f, app))?;
 
         if app.should_quit {
@@ -85,6 +87,16 @@ fn run_app(
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 // Only handle key press events (not release/repeat on Windows)
+                if key.kind == KeyEventKind::Press {
+                    app.handle_key(key.code);
+                }
+            }
+        }
+
+        // Drain any additional pending key events so held-down keys coalesce
+        // into a single state update (and thus one redraw) per frame.
+        while event::poll(Duration::ZERO)? {
+            if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     app.handle_key(key.code);
                 }

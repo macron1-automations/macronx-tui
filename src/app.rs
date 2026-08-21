@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{channel, Receiver, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 
 use crossterm::event::KeyCode;
 use image::DynamicImage;
+use ratatui::layout::Rect;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
+use ratatui_image::Resize;
 use tui_scrollview::ScrollViewState;
 
 use crate::api::ApiClient;
@@ -39,58 +41,10 @@ pub enum Focus {
     Sidebar,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ZoomLevel {
-    Fit,
-    X1,
-    X2,
-    X4,
-}
-
-impl ZoomLevel {
-    pub fn factor(self) -> f32 {
-        match self {
-            ZoomLevel::Fit => 1.0,
-            ZoomLevel::X1 => 1.0,
-            ZoomLevel::X2 => 2.0,
-            ZoomLevel::X4 => 4.0,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            ZoomLevel::Fit => "fit",
-            ZoomLevel::X1 => "100%",
-            ZoomLevel::X2 => "200%",
-            ZoomLevel::X4 => "400%",
-        }
-    }
-
-    pub fn zoom_in(self) -> Self {
-        match self {
-            ZoomLevel::Fit => ZoomLevel::X1,
-            ZoomLevel::X1 => ZoomLevel::X2,
-            ZoomLevel::X2 | ZoomLevel::X4 => ZoomLevel::X4,
-        }
-    }
-
-    pub fn zoom_out(self) -> Self {
-        match self {
-            ZoomLevel::Fit | ZoomLevel::X1 => ZoomLevel::Fit,
-            ZoomLevel::X2 => ZoomLevel::X1,
-            ZoomLevel::X4 => ZoomLevel::X2,
-        }
-    }
-
-    pub fn is_fit(self) -> bool {
-        self == ZoomLevel::Fit
-    }
-}
-
 pub struct ImageAsset {
     /// Protocol sized for the sidebar preview.
     pub protocol: Box<dyn StatefulProtocol>,
-    /// Original decoded image, used by the fullscreen viewer for zoom/pan crops.
+    /// Original decoded image, rendered fit-to-screen by the fullscreen viewer.
     pub image: DynamicImage,
 }
 
@@ -103,29 +57,30 @@ pub enum AssetState {
 
 pub struct ImageViewer {
     pub attachment_id: u64,
-    pub zoom: ZoomLevel,
-    /// Crop center in normalized image coordinates (0.0..=1.0).
-    pub pan_u: f32,
-    pub pan_v: f32,
 }
 
 struct ViewerRender {
-    zoom: ZoomLevel,
-    pan_u: u16, // quantized for change detection
-    pan_v: u16,
     width: u16,
     height: u16,
     protocol: Box<dyn StatefulProtocol>,
 }
 
+/// Parameters of an in-flight viewer encode job on the worker thread.
+struct ViewerEncode {
+    gen: u64,
+    width: u16,
+    height: u16,
+}
+
+struct ViewerEncodeJob {
+    gen: u64,
+    protocol: Box<dyn StatefulProtocol>,
+    area: Rect,
+}
+
 impl ImageViewer {
     fn new(attachment_id: u64) -> Self {
-        Self {
-            attachment_id,
-            zoom: ZoomLevel::Fit,
-            pan_u: 0.5,
-            pan_v: 0.5,
-        }
+        Self { attachment_id }
     }
 }
 
@@ -156,16 +111,32 @@ pub struct App {
     pending_downloads: HashSet<u64>,
     download_tx: std::sync::mpsc::Sender<(u64, Result<Vec<u8>, String>)>,
     download_rx: Receiver<(u64, Result<Vec<u8>, String>)>,
-    audio_bytes: HashMap<u64, Vec<u8>>,
+    raw_bytes: HashMap<u64, Vec<u8>>,
     pending_play: Option<u64>,
     viewer_pending: Option<u64>,
     viewer_render: Option<ViewerRender>,
+    viewer_encode: Option<ViewerEncode>,
+    viewer_gen: u64,
+    encode_tx: Sender<ViewerEncodeJob>,
+    encode_rx: Receiver<(u64, Box<dyn StatefulProtocol>)>,
 }
 
 impl App {
     pub fn new(config: Config) -> Self {
         let client = ApiClient::new(&config.base_url, &config.api_token);
         let (download_tx, download_rx) = channel();
+        let (encode_tx, job_rx) = channel::<ViewerEncodeJob>();
+        let (done_tx, encode_rx) = channel();
+
+        // Background worker: resize+encode viewer images off the UI thread.
+        std::thread::spawn(move || {
+            while let Ok(mut job) = job_rx.recv() {
+                job.protocol
+                    .resize_encode(&Resize::Fit(None), None, job.area);
+                let _ = done_tx.send((job.gen, job.protocol));
+            }
+        });
+
         Self {
             screen: Screen::InboxList,
             inboxes: Vec::new(),
@@ -188,10 +159,14 @@ impl App {
             pending_downloads: HashSet::new(),
             download_tx,
             download_rx,
-            audio_bytes: HashMap::new(),
+            raw_bytes: HashMap::new(),
             pending_play: None,
             viewer_pending: None,
             viewer_render: None,
+            viewer_encode: None,
+            viewer_gen: 0,
+            encode_tx,
+            encode_rx,
         }
     }
 
@@ -323,23 +298,11 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('f') | KeyCode::Char('q') | KeyCode::Backspace => {
                     self.close_viewer();
                 }
-                KeyCode::Char('+') | KeyCode::Char('=') => {
-                    self.viewer_zoom(true);
-                }
-                KeyCode::Char('-') | KeyCode::Char('_') => {
-                    self.viewer_zoom(false);
-                }
-                KeyCode::Char('h') | KeyCode::Left => {
-                    self.viewer_pan(-0.15, 0.0);
-                }
-                KeyCode::Char('l') | KeyCode::Right => {
-                    self.viewer_pan(0.15, 0.0);
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.viewer_pan(0.0, -0.15);
-                }
-                KeyCode::Char('j') | KeyCode::Down => {
-                    self.viewer_pan(0.0, 0.15);
+                KeyCode::Char('o') => {
+                    let id = self.viewer.as_ref().map(|v| v.attachment_id);
+                    if let Some(id) = id {
+                        self.open_externally(id);
+                    }
                 }
                 _ => {}
             }
@@ -354,6 +317,12 @@ impl App {
             }
             KeyCode::Char('f') => {
                 self.open_image_viewer();
+            }
+            KeyCode::Char('o') => {
+                if let Some(att) = self.selected_attachment() {
+                    let id = att.id;
+                    self.open_externally(id);
+                }
             }
             KeyCode::Char(' ') => {
                 self.toggle_audio();
@@ -512,6 +481,7 @@ impl App {
         match kind {
             Some((true, _)) => match image::load_from_memory(&bytes) {
                 Ok(decoded) => {
+                    self.raw_bytes.insert(id, bytes);
                     let protocol = self.picker.new_resize_protocol(decoded.clone());
                     self.assets.insert(
                         id,
@@ -527,7 +497,7 @@ impl App {
                 }
             },
             Some((false, true)) => {
-                self.audio_bytes.insert(id, bytes);
+                self.raw_bytes.insert(id, bytes);
                 self.assets.insert(id, AssetState::AudioReady);
                 if self.pending_play == Some(id) && self.audio.is_none() {
                     self.start_audio(id);
@@ -540,6 +510,7 @@ impl App {
             if matches!(self.assets.get(&id), Some(AssetState::Ready(_))) {
                 self.viewer = Some(ImageViewer::new(id));
                 self.viewer_render = None;
+                self.viewer_encode = None;
             }
             self.viewer_pending = None;
         }
@@ -561,6 +532,7 @@ impl App {
             Some(AssetState::Ready(_)) => {
                 self.viewer = Some(ImageViewer::new(id));
                 self.viewer_render = None;
+                self.viewer_encode = None;
             }
             Some(AssetState::Failed(err)) => {
                 self.status = Some((err.clone(), true));
@@ -576,6 +548,7 @@ impl App {
     pub fn close_viewer(&mut self) {
         self.viewer = None;
         self.viewer_render = None;
+        self.viewer_encode = None;
         self.viewer_pending = None;
     }
 
@@ -591,28 +564,6 @@ impl App {
             .iter()
             .find(|a| a.is_audio())
             .map(|a| a.id)
-    }
-
-    fn viewer_zoom(&mut self, inward: bool) {
-        if let Some(viewer) = &mut self.viewer {
-            viewer.zoom = if inward {
-                viewer.zoom.zoom_in()
-            } else {
-                viewer.zoom.zoom_out()
-            };
-            self.viewer_render = None;
-        }
-    }
-
-    fn viewer_pan(&mut self, du: f32, dv: f32) {
-        if let Some(viewer) = &mut self.viewer {
-            if viewer.zoom.is_fit() {
-                return;
-            }
-            viewer.pan_u = (viewer.pan_u + du).clamp(0.0, 1.0);
-            viewer.pan_v = (viewer.pan_v + dv).clamp(0.0, 1.0);
-            self.viewer_render = None;
-        }
     }
 
     pub fn toggle_audio(&mut self) {
@@ -635,7 +586,7 @@ impl App {
             return;
         };
 
-        if self.audio_bytes.contains_key(&id) {
+        if self.raw_bytes.contains_key(&id) {
             self.start_audio(id);
         } else {
             self.request_attachment(id);
@@ -645,7 +596,7 @@ impl App {
     }
 
     fn start_audio(&mut self, id: u64) {
-        let Some(bytes) = self.audio_bytes.get(&id).cloned() else {
+        let Some(bytes) = self.raw_bytes.get(&id).cloned() else {
             return;
         };
         match AudioPlayer::load(id, bytes) {
@@ -660,10 +611,58 @@ impl App {
         }
     }
 
+    /// Write the attachment's original bytes to a temp file and open it with
+    /// the system's default application for that file type.
+    fn open_externally(&mut self, id: u64) {
+        let Some(att) = self.attachments().iter().find(|a| a.id == id) else {
+            return;
+        };
+        let filename = att.filename.clone();
+        let Some(bytes) = self.raw_bytes.get(&id) else {
+            self.status = Some(("Attachment not downloaded yet".into(), true));
+            return;
+        };
+
+        let name = sanitize_filename(&filename);
+        let dir = std::env::temp_dir().join("macronx-tui");
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.status = Some((format!("Open failed: {}", e), true));
+            return;
+        }
+        let path = dir.join(format!("{}-{}", id, name));
+        if let Err(e) = std::fs::write(&path, bytes) {
+            self.status = Some((format!("Open failed: {}", e), true));
+            return;
+        }
+
+        #[cfg(target_os = "macos")]
+        let mut cmd = {
+            let mut c = std::process::Command::new("open");
+            c.arg(&path);
+            c
+        };
+        #[cfg(not(target_os = "macos"))]
+        let mut cmd = {
+            let mut c = std::process::Command::new("xdg-open");
+            c.arg(&path);
+            c
+        };
+        match cmd
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => self.status = Some((format!("Opened {}", filename), false)),
+            Err(e) => self.status = Some((format!("Open failed: {}", e), true)),
+        }
+    }
+
     pub fn needs_fast_poll(&self) -> bool {
         if !self.pending_downloads.is_empty()
             || self.pending_play.is_some()
             || self.viewer_pending.is_some()
+            || self.viewer_encode.is_some()
         {
             return true;
         }
@@ -673,47 +672,50 @@ impl App {
         false
     }
 
-    pub fn viewer_needs_rebuild(
-        &mut self,
-        zoom: ZoomLevel,
-        pan_u: f32,
-        pan_v: f32,
-        width: u16,
-        height: u16,
-    ) -> bool {
-        let stale = match &self.viewer_render {
-            Some(r) => {
-                r.zoom != zoom
-                    || (r.pan_u as f32 / 1000.0 - pan_u).abs() > 0.001
-                    || (r.pan_v as f32 / 1000.0 - pan_v).abs() > 0.001
-                    || r.width != width
-                    || r.height != height
+    pub fn viewer_needs_rebuild(&mut self, width: u16, height: u16) -> bool {
+        if let Some(r) = &self.viewer_render {
+            if r.width == width && r.height == height {
+                return false;
             }
-            None => true,
-        };
-        if stale {
-            self.viewer_render = None;
         }
-        stale
+        if let Some(e) = &self.viewer_encode {
+            if e.width == width && e.height == height {
+                return false;
+            }
+        }
+        self.viewer_render = None;
+        true
     }
 
-    pub fn store_viewer_protocol(
-        &mut self,
-        zoom: ZoomLevel,
-        pan_u: f32,
-        pan_v: f32,
-        width: u16,
-        height: u16,
-        protocol: Box<dyn StatefulProtocol>,
-    ) {
-        self.viewer_render = Some(ViewerRender {
-            zoom,
-            pan_u: (pan_u * 1000.0) as u16,
-            pan_v: (pan_v * 1000.0) as u16,
-            width,
-            height,
+    /// Hand a freshly built protocol to the worker thread for resize+encode.
+    pub fn begin_viewer_encode(&mut self, width: u16, height: u16, image: DynamicImage) {
+        self.viewer_gen += 1;
+        let gen = self.viewer_gen;
+        let mut picker = self.take_picker();
+        let protocol = picker.new_resize_protocol(image);
+        self.return_picker(picker);
+        let _ = self.encode_tx.send(ViewerEncodeJob {
+            gen,
             protocol,
+            area: Rect::new(0, 0, width, height),
         });
+        self.viewer_encode = Some(ViewerEncode { gen, width, height });
+    }
+
+    /// Collect finished encodes from the worker, dropping stale generations.
+    pub fn poll_viewer_encode(&mut self) {
+        while let Ok((gen, protocol)) = self.encode_rx.try_recv() {
+            let current = self.viewer_encode.as_ref().is_some_and(|e| e.gen == gen);
+            if current {
+                if let Some(e) = self.viewer_encode.take() {
+                    self.viewer_render = Some(ViewerRender {
+                        width: e.width,
+                        height: e.height,
+                        protocol,
+                    });
+                }
+            }
+        }
     }
 
     pub fn viewer_protocol_mut(&mut self) -> Option<&mut Box<dyn StatefulProtocol>> {
@@ -797,5 +799,20 @@ impl App {
         self.selected_tag
             .and_then(|i| self.tags.get(i))
             .map(|t| t.name.as_str())
+    }
+}
+
+/// Reduce an attachment filename to a safe single path component.
+fn sanitize_filename(name: &str) -> String {
+    let base = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(name)
+        .trim()
+        .to_string();
+    if base.is_empty() {
+        "attachment".to_string()
+    } else {
+        base
     }
 }

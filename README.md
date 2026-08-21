@@ -48,9 +48,10 @@ cargo run
 | `Tab` | Toggle focus between body and sidebar |
 | `Shift+Tab` / `h` / `l` | Switch sidebar tab (Metadata / Attachments) |
 | `f` | Open fullscreen image viewer for the attached image |
+| `o` | Open selected attachment with the system's default app (also works in the image viewer) |
 | `space` | Play / pause attached audio |
 | `←` / `→` | Seek audio ±5s (or switch sidebar tab when no audio is loaded) |
-| `+` / `-` | Audio volume (or zoom in the image viewer) |
+| `+` / `-` | Audio volume |
 | `q` | Quit |
 
 ## Detail View Sidebar
@@ -64,8 +65,7 @@ The detail view splits the body area into a main scrollable column (~80%) and a 
 
 Pressing `f` anywhere in the detail view opens the attached image fullscreen (fit to screen). Then:
 
-- `+` / `-` zoom between fit, 100%, 200%, and 400%
-- `h` `j` `k` `l` (or arrow keys) pan while zoomed
+- `o` opens the original file with the system's default image app
 - `f` or `Esc` closes
 
 Images render through native terminal graphics protocols (Kitty, iTerm2, Sixel) via `ratatui-image`, falling back to unicode halfblocks on terminals without graphics support.
