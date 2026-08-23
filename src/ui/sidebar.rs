@@ -9,6 +9,7 @@ use ratatui_image::{protocol::StatefulProtocol, Resize, StatefulImage};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, AssetState, Focus, SidebarTab};
+use crate::format::datetime_compact;
 use crate::models::Attachment;
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -79,7 +80,7 @@ fn render_metadata(f: &mut Frame, app: &App, area: Rect) {
         ),
         kv_line(
             "Created",
-            &format_datetime_short(&inbox.created_at),
+            &datetime_compact(&inbox.created_at),
             label_style,
             value_style,
         ),
@@ -440,15 +441,6 @@ fn centered_top(area: Rect) -> Rect {
         area.width,
         area.height / 2,
     )
-}
-
-fn format_datetime_short(s: &str) -> String {
-    if s.len() >= 16 {
-        if let (Some(date), Some(time)) = (s.get(..10), s.get(11..16)) {
-            return format!("{} {}", date, time);
-        }
-    }
-    s.to_string()
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ use tui_scrollview::{ScrollView, ScrollViewState};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::App;
+use crate::format::datetime_long;
 use crate::models::Inbox;
 
 use super::{image_viewer, sidebar};
@@ -109,7 +110,7 @@ fn render_details(f: &mut Frame, inbox: &Inbox, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  Created    ", label_style),
-            Span::styled(format_datetime(&inbox.created_at), value_style),
+            Span::styled(datetime_long(&inbox.created_at), value_style),
         ]),
     ];
 
@@ -188,8 +189,9 @@ fn style_markdown(text: &str, width: usize) -> Vec<Line<'static>> {
 }
 
 fn push_wrapped(out: &mut Vec<Line<'static>>, raw: &str, width: usize, style: &Style) {
-    for piece in wrap_text(raw, width) {
-        out.push(Line::styled(piece, *style));
+    for tokens in wrap_tokens(vec![(raw.to_string(), ())], width) {
+        let text: String = tokens.into_iter().map(|(piece, _)| piece).collect();
+        out.push(Line::styled(text, *style));
     }
 }
 
@@ -199,7 +201,7 @@ fn push_styled(out: &mut Vec<Line<'static>>, raw: &str, width: usize, style: &St
         return;
     }
     let segments = parse_bold(raw);
-    for tokens in wrap_segments(&segments, width) {
+    for tokens in wrap_tokens(segments, width) {
         out.push(line_from_tokens(tokens, *style));
     }
 }
@@ -244,16 +246,20 @@ fn push_segment(segments: &mut Vec<(String, bool)>, text: &str, bold: bool) {
     segments.push((text.to_string(), bold));
 }
 
-fn wrap_segments(segments: &[(String, bool)], width: usize) -> Vec<Vec<(String, bool)>> {
+fn wrap_tokens<T: Copy>(segments: Vec<(String, T)>, width: usize) -> Vec<Vec<(String, T)>> {
     if width == 0 {
-        return vec![segments.to_vec()];
+        return vec![segments];
     }
 
     let mut lines = Vec::new();
-    let mut current: Vec<(String, bool)> = Vec::new();
+    let mut current: Vec<(String, T)> = Vec::new();
     let mut current_width = 0usize;
 
-    for (text, bold) in segments {
+    for (text, meta) in segments {
+        if text.is_empty() {
+            current.push((String::new(), meta));
+            continue;
+        }
         for token in text.split_inclusive(char::is_whitespace) {
             let token_width = token.width();
             if current_width + token_width > width && current_width > 0 {
@@ -266,16 +272,16 @@ fn wrap_segments(segments: &[(String, bool)], width: usize) -> Vec<Vec<(String, 
                 for ch in token.chars() {
                     let ch_width = ch.width().unwrap_or(0);
                     if chunk_width + ch_width > width && chunk_width > 0 {
-                        lines.push(vec![(std::mem::take(&mut chunk), *bold)]);
+                        lines.push(vec![(std::mem::take(&mut chunk), meta)]);
                         chunk_width = 0;
                     }
                     chunk.push(ch);
                     chunk_width += ch_width;
                 }
-                current.push((chunk, *bold));
+                current.push((chunk, meta));
                 current_width = chunk_width;
             } else {
-                current.push((token.to_string(), *bold));
+                current.push((token.to_string(), meta));
                 current_width += token_width;
             }
         }
@@ -286,7 +292,6 @@ fn wrap_segments(segments: &[(String, bool)], width: usize) -> Vec<Vec<(String, 
     }
     lines
 }
-
 fn line_from_tokens(tokens: Vec<(String, bool)>, base: Style) -> Line<'static> {
     let spans: Vec<Span<'static>> = tokens
         .into_iter()
@@ -308,80 +313,4 @@ fn is_code_fence(line: &str) -> bool {
 fn is_heading(line: &str) -> bool {
     let hashes = line.chars().take_while(|&c| c == '#').count();
     hashes > 0 && (line.chars().nth(hashes) == Some(' ') || hashes == line.chars().count())
-}
-
-fn wrap_text(line: &str, width: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    if width == 0 {
-        out.push(line.to_string());
-        return out;
-    }
-    if line.is_empty() {
-        out.push(String::new());
-        return out;
-    }
-
-    let mut current = String::new();
-    let mut current_width = 0usize;
-
-    for token in line.split_inclusive(char::is_whitespace) {
-        let token_width = token.width();
-        if current_width + token_width > width && current_width > 0 {
-            out.push(std::mem::take(&mut current));
-            current_width = 0;
-        }
-        if token_width > width && current_width == 0 {
-            let mut chunk = String::new();
-            let mut chunk_width = 0usize;
-            for ch in token.chars() {
-                let ch_width = ch.width().unwrap_or(0);
-                if chunk_width + ch_width > width && chunk_width > 0 {
-                    out.push(std::mem::take(&mut chunk));
-                    chunk_width = 0;
-                }
-                chunk.push(ch);
-                chunk_width += ch_width;
-            }
-            current = chunk;
-            current_width = chunk_width;
-        } else {
-            current.push_str(token);
-            current_width += token_width;
-        }
-    }
-
-    if current_width > 0 {
-        out.push(current);
-    }
-    out
-}
-
-fn format_datetime(s: &str) -> String {
-    // "2026-06-12T20:40:00.000Z" → "June 12, 2026 at 20:40 UTC"
-    if s.len() >= 16 {
-        let (Some(date), Some(time)) = (s.get(..10), s.get(11..16)) else {
-            return s.to_string();
-        };
-        let parts: Vec<&str> = date.split('-').collect();
-        if parts.len() == 3 {
-            let month = match parts[1] {
-                "01" => "January",
-                "02" => "February",
-                "03" => "March",
-                "04" => "April",
-                "05" => "May",
-                "06" => "June",
-                "07" => "July",
-                "08" => "August",
-                "09" => "September",
-                "10" => "October",
-                "11" => "November",
-                "12" => "December",
-                _ => parts[1],
-            };
-            let day = parts[2].trim_start_matches('0');
-            return format!("{} {}, {} at {} UTC", month, day, parts[0], time);
-        }
-    }
-    s.to_string()
 }

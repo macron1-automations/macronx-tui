@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::format::date_short;
 
 pub fn render(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -64,7 +65,7 @@ pub fn render(f: &mut Frame, app: &App) {
             Row::new(vec![
                 Cell::from(inbox.name.as_str()),
                 Cell::from(inbox.summary.as_deref().unwrap_or("")),
-                Cell::from(format_date(&inbox.created_at)),
+                Cell::from(date_short(&inbox.created_at)),
             ])
         })
         .collect();
@@ -178,34 +179,4 @@ fn tag_color(color: Option<&str>) -> Color {
         Some(c) if c.contains("gray") || c.contains("grey") => Color::DarkGray,
         _ => Color::White,
     }
-}
-
-fn format_date(s: &str) -> String {
-    // "2026-06-12T20:40:00.000Z" → "Jun 12, 2026"
-    if s.len() >= 10 {
-        let Some(date) = s.get(..10) else {
-            return s.to_string();
-        };
-        let parts: Vec<&str> = date.split('-').collect();
-        if parts.len() == 3 {
-            let month = match parts[1] {
-                "01" => "Jan",
-                "02" => "Feb",
-                "03" => "Mar",
-                "04" => "Apr",
-                "05" => "May",
-                "06" => "Jun",
-                "07" => "Jul",
-                "08" => "Aug",
-                "09" => "Sep",
-                "10" => "Oct",
-                "11" => "Nov",
-                "12" => "Dec",
-                _ => parts[1],
-            };
-            let day = parts[2].trim_start_matches('0');
-            return format!("{} {}, {}", month, day, parts[0]);
-        }
-    }
-    s.to_string()
 }
