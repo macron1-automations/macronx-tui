@@ -48,6 +48,7 @@ cargo run
 | `G` | Scroll body to bottom |
 | `Tab` | Toggle focus between body and sidebar |
 | `Shift+Tab` / `h` / `l` | Switch sidebar tab (Metadata / Attachments) |
+| `u` | Toggle sidebar visibility |
 | `f` | Open fullscreen image viewer for the attached image |
 | `o` | Open selected attachment with the system's default app (also works in the image viewer) |
 | `space` | Play / pause attached audio |

@@ -123,6 +123,7 @@ pub struct App {
 
     // Sidebar
     pub sidebar_tab: SidebarTab,
+    pub sidebar_visible: bool,
     pub focus: Focus,
     pub selected_attachment: usize,
 
@@ -176,6 +177,7 @@ impl App {
             should_quit: false,
             client,
             sidebar_tab: SidebarTab::Metadata,
+            sidebar_visible: true,
             focus: Focus::Body,
             selected_attachment: 0,
             picker: Picker::new((10, 20)),
@@ -431,6 +433,9 @@ impl App {
             KeyCode::Char('G') => {
                 self.body_scroll.scroll_to_bottom();
             }
+            KeyCode::Char('u') => {
+                self.toggle_sidebar();
+            }
             _ => {}
         }
     }
@@ -459,6 +464,13 @@ impl App {
     fn on_tab_entered(&mut self) {
         if self.sidebar_tab == SidebarTab::Attachments {
             self.on_attachment_selected();
+        }
+    }
+
+    fn toggle_sidebar(&mut self) {
+        self.sidebar_visible = !self.sidebar_visible;
+        if !self.sidebar_visible {
+            self.focus = Focus::Body;
         }
     }
 
