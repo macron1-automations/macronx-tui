@@ -41,6 +41,28 @@ pub enum Focus {
     Sidebar,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum IndexView {
+    Processed,
+    Archived,
+}
+
+impl IndexView {
+    pub fn toggle(self) -> Self {
+        match self {
+            IndexView::Processed => IndexView::Archived,
+            IndexView::Archived => IndexView::Processed,
+        }
+    }
+
+    pub fn matches(&self, inbox: &Inbox) -> bool {
+        match self {
+            IndexView::Processed => inbox.processed && !inbox.archived,
+            IndexView::Archived => inbox.archived,
+        }
+    }
+}
+
 pub struct ImageAsset {
     /// Protocol sized for the sidebar preview.
     pub protocol: Box<dyn StatefulProtocol>,
@@ -89,7 +111,9 @@ pub struct App {
     pub inboxes: Vec<Inbox>,
     pub tags: Vec<Tag>,
     pub selected_tag: Option<usize>, // index into `tags`, None = "All"
-    pub filtered: Vec<usize>,        // indices into `inboxes` matching the active tag
+    pub index_view: IndexView,
+    api_tags: Vec<Tag>,
+    pub filtered: Vec<usize>,        // indices into `inboxes` matching the active view + tag
     pub selected: usize,
     pub current_inbox: Option<Inbox>,
     pub body_scroll: ScrollViewState,
@@ -142,6 +166,8 @@ impl App {
             inboxes: Vec::new(),
             tags: Vec::new(),
             selected_tag: None,
+            index_view: IndexView::Processed,
+            api_tags: Vec::new(),
             filtered: Vec::new(),
             selected: 0,
             current_inbox: None,
@@ -286,6 +312,9 @@ impl App {
             }
             KeyCode::Char('r') => {
                 self.load_inboxes();
+            }
+            KeyCode::Char('t') => {
+                self.toggle_index_view();
             }
             _ => {}
         }
@@ -723,13 +752,21 @@ impl App {
     }
 
     fn refresh_tags(&mut self) {
+        self.api_tags = self.client.list_tags().unwrap_or_default();
+        self.rebuild_tags();
+    }
+
+    fn rebuild_tags(&mut self) {
         let selected = self.selected_tag_name().map(|s| s.to_string());
 
-        let mut tags = self.client.list_tags().unwrap_or_default();
+        let mut tags = self.api_tags.clone();
 
         // Union in any tags seen on inboxes that are not yet listed.
         let mut names: HashSet<String> = tags.iter().map(|t| t.name.to_lowercase()).collect();
         for inbox in &self.inboxes {
+            if !self.index_view.matches(inbox) {
+                continue;
+            }
             if let Some(name) = inbox.tag.as_deref() {
                 if !name.trim().is_empty() && names.insert(name.to_lowercase()) {
                     tags.push(Tag {
@@ -751,19 +788,28 @@ impl App {
         self.apply_filter();
     }
 
+    fn toggle_index_view(&mut self) {
+        self.index_view = self.index_view.toggle();
+        self.selected = 0;
+        self.rebuild_tags();
+    }
+
     fn apply_filter(&mut self) {
         let tag = self.selected_tag_name();
         self.filtered = self
             .inboxes
             .iter()
             .enumerate()
-            .filter(|(_, inbox)| match tag {
-                None => true,
-                Some(t) => inbox
-                    .tag
-                    .as_deref()
-                    .map(|name| name.eq_ignore_ascii_case(t))
-                    .unwrap_or(false),
+            .filter(|(_, inbox)| {
+                self.index_view.matches(inbox)
+                    && match tag {
+                        None => true,
+                        Some(t) => inbox
+                            .tag
+                            .as_deref()
+                            .map(|name| name.eq_ignore_ascii_case(t))
+                            .unwrap_or(false),
+                    }
             })
             .map(|(idx, _)| idx)
             .collect();
@@ -814,5 +860,114 @@ fn sanitize_filename(name: &str) -> String {
         "attachment".to_string()
     } else {
         base
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inbox(id: u64, processed: bool, archived: bool, tag: Option<&str>) -> Inbox {
+        Inbox {
+            id,
+            name: format!("inbox-{}", id),
+            source: "test".into(),
+            tag: tag.map(|s| s.to_string()),
+            summary: None,
+            body: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            attachments: Vec::new(),
+            processed,
+            archived,
+        }
+    }
+
+    fn test_app() -> App {
+        App::new(Config {
+            base_url: "http://localhost:5000".into(),
+            api_token: "test-token".into(),
+        })
+    }
+
+    #[test]
+    fn default_view_is_processed() {
+        let app = test_app();
+        assert_eq!(app.index_view, IndexView::Processed);
+    }
+
+    #[test]
+    fn processed_view_filters_processed_unarchived() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, None),
+            inbox(2, false, false, None),
+            inbox(3, true, true, None),
+            inbox(4, false, true, None),
+        ];
+        app.api_tags = Vec::new();
+        app.rebuild_tags();
+
+        assert_eq!(app.filtered, vec![0]);
+    }
+
+    #[test]
+    fn archived_view_filters_archived_items() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, None),
+            inbox(2, false, false, None),
+            inbox(3, true, true, None),
+            inbox(4, false, true, None),
+        ];
+        app.index_view = IndexView::Archived;
+        app.api_tags = Vec::new();
+        app.rebuild_tags();
+
+        assert_eq!(app.filtered, vec![2, 3]);
+    }
+
+    #[test]
+    fn t_key_toggles_view() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, None),
+            inbox(2, true, true, None),
+        ];
+        app.api_tags = Vec::new();
+        app.rebuild_tags();
+        assert_eq!(app.filtered, vec![0]);
+
+        app.handle_list_key(KeyCode::Char('t'));
+        assert_eq!(app.index_view, IndexView::Archived);
+        assert_eq!(app.filtered, vec![1]);
+
+        app.handle_list_key(KeyCode::Char('t'));
+        assert_eq!(app.index_view, IndexView::Processed);
+        assert_eq!(app.filtered, vec![0]);
+    }
+
+    #[test]
+    fn tag_filter_combines_with_view() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, Some("Research")),
+            inbox(2, true, false, Some("News")),
+            inbox(3, true, true, Some("Research")),
+        ];
+        app.api_tags = vec![
+            Tag { name: "Research".into(), color: None },
+            Tag { name: "News".into(), color: None },
+        ];
+        app.rebuild_tags();
+
+        app.selected_tag = app
+            .tags
+            .iter()
+            .position(|t| t.name == "Research");
+        app.apply_filter();
+        assert_eq!(app.filtered, vec![0]);
+
+        app.handle_list_key(KeyCode::Char('t'));
+        assert_eq!(app.filtered, vec![2]);
     }
 }

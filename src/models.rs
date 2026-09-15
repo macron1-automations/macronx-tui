@@ -17,6 +17,10 @@ pub struct Inbox {
     pub created_at: String,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    #[serde(default)]
+    pub processed: bool,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -98,5 +102,21 @@ mod tests {
         let json = r#"{"id": 1, "name": "n", "source": "s"}"#;
         let inbox: Inbox = serde_json::from_str(json).unwrap();
         assert!(inbox.attachments.is_empty());
+        assert!(!inbox.processed);
+        assert!(!inbox.archived);
+    }
+
+    #[test]
+    fn parses_processed_and_archived() {
+        let json = r#"{
+            "id": 2,
+            "name": "n",
+            "source": "s",
+            "processed": true,
+            "archived": false
+        }"#;
+        let inbox: Inbox = serde_json::from_str(json).unwrap();
+        assert!(inbox.processed);
+        assert!(!inbox.archived);
     }
 }
