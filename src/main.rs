@@ -2,6 +2,7 @@ mod api;
 mod app;
 mod audio;
 mod config;
+mod format;
 mod models;
 mod ui;
 
