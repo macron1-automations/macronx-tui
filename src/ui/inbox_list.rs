@@ -76,11 +76,11 @@ pub fn render(f: &mut Frame, app: &App) {
         Constraint::Percentage(30),
     ];
 
-    let title_text = if app.filtered.len() < app.inboxes.len() {
-        format!(" {} / {} inboxes ", app.filtered.len(), app.inboxes.len())
-    } else {
-        format!(" {} inboxes ", app.inboxes.len())
+    let view_label = match app.index_view {
+        crate::app::IndexView::Processed => "Processed",
+        crate::app::IndexView::Archived => "Archived",
     };
+    let title_text = format!(" {} · {} ", view_label, app.filtered.len());
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -120,6 +120,8 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw("Tags  "),
             Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
             Span::raw("Open  "),
+            Span::styled("[t] ", Style::default().fg(Color::Cyan)),
+            Span::raw("View  "),
             Span::styled("[r] ", Style::default().fg(Color::Cyan)),
             Span::raw("Refresh  "),
             Span::styled("[q] ", Style::default().fg(Color::Cyan)),

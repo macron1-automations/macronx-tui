@@ -39,6 +39,7 @@ cargo run
 | `Shift+K` | Filter by previous tag |
 | `Enter` | Open selected inbox |
 | `r` | Refresh inboxes |
+| `t` | Toggle between processed and archived views |
 | `Esc` / `Backspace` | Return from detail screen |
 | `j` / `Down` | Scroll body down (or move attachment selection when sidebar is focused) |
 | `k` / `Up` | Scroll body up (or move attachment selection when sidebar is focused) |
