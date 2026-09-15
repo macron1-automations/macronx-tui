@@ -55,13 +55,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
     render_details(f, inbox, chunks[1]);
 
     // Body + sidebar: scrollable content shrinks by ~20% for the sidebar.
-    let body_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
-        .split(chunks[2]);
+    let body_chunks = if app.sidebar_visible {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
+            .split(chunks[2])
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(100)])
+            .split(chunks[2])
+    };
 
     render_body(f, inbox, body_chunks[0], &mut app.body_scroll);
-    sidebar::render(f, app, body_chunks[1]);
+    if app.sidebar_visible {
+        sidebar::render(f, app, body_chunks[1]);
+    }
 
     // Status bar
     let status_text = if let Some((msg, is_error)) = &app.status {
@@ -77,6 +86,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
             Span::raw("Scroll  "),
             Span::styled("[Tab] ", Style::default().fg(Color::Cyan)),
             Span::raw("Sidebar  "),
+            Span::styled("[u] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Toggle  "),
             Span::styled("[f] ", Style::default().fg(Color::Cyan)),
             Span::raw("Image  "),
             Span::styled("[space] ", Style::default().fg(Color::Cyan)),
