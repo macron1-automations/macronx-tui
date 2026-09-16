@@ -47,21 +47,19 @@ cargo run
 | `g` | Scroll body to top |
 | `G` | Scroll body to bottom |
 | `Tab` | Toggle focus between body and sidebar |
-| `Shift+Tab` / `h` / `l` | Switch sidebar tab (Metadata / Attachments) |
 | `u` | Toggle sidebar visibility |
 | `f` | Open fullscreen image viewer for the attached image |
 | `o` | Open selected attachment with the system's default app (also works in the image viewer) |
 | `space` | Play / pause attached audio |
-| `←` / `→` | Seek audio ±5s (or switch sidebar tab when no audio is loaded) |
+| `←` / `→` | Seek audio ±5s |
 | `+` / `-` | Audio volume |
 | `q` | Quit |
 
 ## Detail View Sidebar
 
-The detail view splits the body area into a main scrollable column (~80%) and a sidebar (~20%). The sidebar has two tabs:
+The detail view splits the body area into a main scrollable column (~80%) and a sidebar (~20%). The sidebar shows metadata fields — id, source, tag, creation time, and attachment count — with the attachments list rendered directly beneath them in the same pane:
 
-- **Metadata** — id, source, tag, creation time, attachment count, and summary.
-- **Attachments** — list of files with type tag (`[IMG]`, `[AUD]`, `[FILE]`) and size. Selecting an image lazily downloads and previews it inline; selecting an audio file shows an inline mini-player with elapsed/total time, a waveform overview with playhead, and a live level visualization.
+- Attachment rows show a type tag (`[IMG]`, `[AUD]`, `[FILE]`) and size. Selecting an image lazily downloads and previews it inline; selecting an audio file shows an inline mini-player with elapsed/total time, a waveform overview with playhead, and a live level visualization. Only the selected attachment is downloaded, so the sidebar stays lazy.
 
 ### Image Viewer
 

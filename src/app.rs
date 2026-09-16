@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::Mutex;
 
 use crossterm::event::KeyCode;
 use image::DynamicImage;
@@ -18,21 +19,6 @@ use crate::models::{Attachment, Inbox, Tag};
 pub enum Screen {
     InboxList,
     InboxShow,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SidebarTab {
-    Metadata,
-    Attachments,
-}
-
-impl SidebarTab {
-    pub fn next(self) -> Self {
-        match self {
-            SidebarTab::Metadata => SidebarTab::Attachments,
-            SidebarTab::Attachments => SidebarTab::Metadata,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +61,41 @@ pub enum AssetState {
     Ready(ImageAsset),
     AudioReady,
     Failed(String),
+}
+
+/// Result of a background attachment download. Images arrive with a protocol
+/// already encoded for the sidebar preview so the UI thread never decodes,
+/// hashes, or encodes images itself.
+enum PreparedDownload {
+    Image {
+        asset: ImageAsset,
+        bytes: Vec<u8>,
+    },
+    Audio {
+        bytes: Vec<u8>,
+    },
+    Other,
+}
+
+#[derive(Clone, Copy)]
+enum AttachmentKind {
+    Image,
+    Audio,
+    Other,
+}
+
+/// Shared source of protocol construction. Protocols are built on download
+/// worker threads as well as the UI thread, so all `new_resize_protocol` calls
+/// are serialized through one picker: that keeps the Kitty encoder's internal
+/// image-id counter monotonic (unique ids) across threads.
+static PROTOCOL_PICKER: Mutex<Option<Picker>> = Mutex::new(None);
+
+fn new_resize_protocol(image: DynamicImage) -> Box<dyn StatefulProtocol> {
+    let mut guard = PROTOCOL_PICKER.lock().unwrap();
+    guard
+        .as_mut()
+        .expect("picker not initialized")
+        .new_resize_protocol(image)
 }
 
 pub struct ImageViewer {
@@ -122,7 +143,6 @@ pub struct App {
     pub client: ApiClient,
 
     // Sidebar
-    pub sidebar_tab: SidebarTab,
     pub sidebar_visible: bool,
     pub focus: Focus,
     pub selected_attachment: usize,
@@ -134,9 +154,10 @@ pub struct App {
     pub audio: Option<AudioPlayer>,
 
     pending_downloads: HashSet<u64>,
-    download_tx: std::sync::mpsc::Sender<(u64, Result<Vec<u8>, String>)>,
-    download_rx: Receiver<(u64, Result<Vec<u8>, String>)>,
+    download_tx: std::sync::mpsc::Sender<(u64, Result<PreparedDownload, String>)>,
+    download_rx: Receiver<(u64, Result<PreparedDownload, String>)>,
     raw_bytes: HashMap<u64, Vec<u8>>,
+    preview_area: Option<Rect>,
     pending_play: Option<u64>,
     viewer_pending: Option<u64>,
     viewer_render: Option<ViewerRender>,
@@ -162,6 +183,10 @@ impl App {
             }
         });
 
+        // Keep the shared construction picker synchronized with App's default
+        // until `set_picker` swaps in the real one after terminal setup.
+        *PROTOCOL_PICKER.lock().unwrap() = Some(Picker::new((10, 20)));
+
         Self {
             screen: Screen::InboxList,
             inboxes: Vec::new(),
@@ -176,7 +201,6 @@ impl App {
             status: None,
             should_quit: false,
             client,
-            sidebar_tab: SidebarTab::Metadata,
             sidebar_visible: true,
             focus: Focus::Body,
             selected_attachment: 0,
@@ -188,6 +212,7 @@ impl App {
             download_tx,
             download_rx,
             raw_bytes: HashMap::new(),
+            preview_area: None,
             pending_play: None,
             viewer_pending: None,
             viewer_render: None,
@@ -198,18 +223,11 @@ impl App {
         }
     }
 
+    /// Replaces the default picker with a real one queried from the terminal,
+    /// and seeds the shared picker used to build protocols on worker threads.
     pub fn set_picker(&mut self, picker: Picker) {
         self.picker = picker;
-    }
-
-    /// Temporarily hand out the picker (protocol construction needs `&mut`).
-    /// Always pair with `return_picker`.
-    pub fn take_picker(&mut self) -> Picker {
-        std::mem::replace(&mut self.picker, Picker::new((10, 20)))
-    }
-
-    pub fn return_picker(&mut self, picker: Picker) {
-        self.picker = picker;
+        *PROTOCOL_PICKER.lock().unwrap() = Some(picker);
     }
 
     pub fn attachments(&self) -> &[Attachment] {
@@ -258,7 +276,9 @@ impl App {
                 self.pending_play = None;
                 self.current_inbox = Some(inbox);
                 self.body_scroll.scroll_to_top();
-                self.sidebar_tab = SidebarTab::Metadata;
+                if self.sidebar_visible {
+                    self.on_attachment_selected();
+                }
                 self.focus = Focus::Body;
                 self.selected_attachment = 0;
                 self.screen = Screen::InboxShow;
@@ -369,25 +389,24 @@ impl App {
                 }
             }
             KeyCode::Tab => {
+                let entering_sidebar = self.focus == Focus::Body;
                 self.focus = match self.focus {
                     Focus::Body => Focus::Sidebar,
                     Focus::Sidebar => Focus::Body,
                 };
-                self.on_tab_entered();
-            }
-            KeyCode::BackTab => {
-                self.sidebar_tab = self.sidebar_tab.next();
-                self.on_tab_entered();
+                if entering_sidebar {
+                    self.on_attachment_selected();
+                }
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.focus == Focus::Sidebar && self.sidebar_tab == SidebarTab::Attachments {
+                if self.focus == Focus::Sidebar {
                     self.select_next_attachment();
                 } else {
                     self.body_scroll.scroll_down();
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.focus == Focus::Sidebar && self.sidebar_tab == SidebarTab::Attachments {
+                if self.focus == Focus::Sidebar {
                     self.select_prev_attachment();
                 } else {
                     self.body_scroll.scroll_up();
@@ -396,29 +415,11 @@ impl App {
             KeyCode::Left => {
                 if let Some(audio) = &self.audio {
                     audio.seek_back(std::time::Duration::from_secs(5));
-                } else if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
                 }
             }
             KeyCode::Right => {
                 if let Some(audio) = &self.audio {
                     audio.seek_forward(std::time::Duration::from_secs(5));
-                } else if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
-                }
-            }
-            KeyCode::Char('h') => {
-                if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
-                }
-            }
-            KeyCode::Char('l') => {
-                if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
                 }
             }
             KeyCode::PageDown => {
@@ -460,13 +461,6 @@ impl App {
         }
     }
 
-    /// Kick off lazy downloads when the Attachments tab becomes visible.
-    fn on_tab_entered(&mut self) {
-        if self.sidebar_tab == SidebarTab::Attachments {
-            self.on_attachment_selected();
-        }
-    }
-
     fn toggle_sidebar(&mut self) {
         self.sidebar_visible = !self.sidebar_visible;
         if !self.sidebar_visible {
@@ -474,12 +468,27 @@ impl App {
         }
     }
 
+    /// Remember the area the sidebar preview renders into, so lazily requested
+    /// images are pre-encoded for that size by their download worker.
+    pub fn set_preview_area(&mut self, area: Rect) {
+        self.preview_area = Some(area);
+    }
+
     pub fn request_attachment(&mut self, id: u64) {
         if self.assets.contains_key(&id) || self.pending_downloads.contains(&id) {
             return;
         }
-        let url = match self.attachments().iter().find(|a| a.id == id) {
-            Some(att) if !att.url.is_empty() => att.url.clone(),
+        let (url, kind) = match self.attachments().iter().find(|a| a.id == id) {
+            Some(att) if !att.url.is_empty() => {
+                let kind = if att.is_image() {
+                    AttachmentKind::Image
+                } else if att.is_audio() {
+                    AttachmentKind::Audio
+                } else {
+                    AttachmentKind::Other
+                };
+                (att.url.clone(), kind)
+            }
             _ => return,
         };
 
@@ -488,8 +497,35 @@ impl App {
 
         let client = self.client.clone();
         let tx = self.download_tx.clone();
+        let font_size = self.picker.font_size;
+        let preview_area = self.preview_area;
         std::thread::spawn(move || {
-            let result = client.fetch_bytes(&url).map_err(|e| e.to_string());
+            let result = match client.fetch_bytes(&url) {
+                Ok(bytes) => match kind {
+                    AttachmentKind::Image => image::load_from_memory(&bytes)
+                        .map(|decoded| {
+                            let mut protocol = new_resize_protocol(shrink_for_preview(
+                                decoded.clone(),
+                                preview_area,
+                                font_size,
+                            ));
+                            if let Some(area) = preview_area {
+                                protocol.resize_encode(&Resize::Fit(None), None, area);
+                            }
+                            PreparedDownload::Image {
+                                asset: ImageAsset {
+                                    protocol,
+                                    image: decoded,
+                                },
+                                bytes,
+                            }
+                        })
+                        .map_err(|e| format!("Decode failed: {}", e)),
+                    AttachmentKind::Audio => Ok(PreparedDownload::Audio { bytes }),
+                    AttachmentKind::Other => Ok(PreparedDownload::Other),
+                },
+                Err(e) => Err(e.to_string()),
+            };
             let _ = tx.send((id, result));
         });
     }
@@ -500,7 +536,7 @@ impl App {
                 Ok((id, result)) => {
                     self.pending_downloads.remove(&id);
                     match result {
-                        Ok(bytes) => self.on_download_complete(id, bytes),
+                        Ok(prepared) => self.on_download_complete(id, prepared),
                         Err(err) => {
                             self.assets.insert(id, AssetState::Failed(err));
                         }
@@ -512,39 +548,20 @@ impl App {
         }
     }
 
-    fn on_download_complete(&mut self, id: u64, bytes: Vec<u8>) {
-        let kind = self
-            .attachments()
-            .iter()
-            .find(|a| a.id == id)
-            .map(|a| (a.is_image(), a.is_audio()));
-
-        match kind {
-            Some((true, _)) => match image::load_from_memory(&bytes) {
-                Ok(decoded) => {
-                    self.raw_bytes.insert(id, bytes);
-                    let protocol = self.picker.new_resize_protocol(decoded.clone());
-                    self.assets.insert(
-                        id,
-                        AssetState::Ready(ImageAsset {
-                            protocol,
-                            image: decoded,
-                        }),
-                    );
-                }
-                Err(e) => {
-                    self.assets
-                        .insert(id, AssetState::Failed(format!("Decode failed: {}", e)));
-                }
-            },
-            Some((false, true)) => {
+    fn on_download_complete(&mut self, id: u64, prepared: PreparedDownload) {
+        match prepared {
+            PreparedDownload::Image { asset, bytes } => {
+                self.raw_bytes.insert(id, bytes);
+                self.assets.insert(id, AssetState::Ready(asset));
+            }
+            PreparedDownload::Audio { bytes } => {
                 self.raw_bytes.insert(id, bytes);
                 self.assets.insert(id, AssetState::AudioReady);
                 if self.pending_play == Some(id) && self.audio.is_none() {
                     self.start_audio(id);
                 }
             }
-            _ => {}
+            PreparedDownload::Other => {}
         }
 
         if self.viewer_pending == Some(id) {
@@ -732,9 +749,7 @@ impl App {
     pub fn begin_viewer_encode(&mut self, width: u16, height: u16, image: DynamicImage) {
         self.viewer_gen += 1;
         let gen = self.viewer_gen;
-        let mut picker = self.take_picker();
-        let protocol = picker.new_resize_protocol(image);
-        self.return_picker(picker);
+        let protocol = new_resize_protocol(image);
         let _ = self.encode_tx.send(ViewerEncodeJob {
             gen,
             protocol,
@@ -858,6 +873,30 @@ impl App {
             .and_then(|i| self.tags.get(i))
             .map(|t| t.name.as_str())
     }
+}
+
+/// Pre-bounds the image handed to the sidebar preview protocol so decoding and
+/// any re-encode that happens on the UI thread (e.g. after a resize) touches a
+/// small bitmap instead of the full-resolution photo.
+fn shrink_for_preview(
+    img: image::DynamicImage,
+    preview_area: Option<Rect>,
+    font_size: (u16, u16),
+) -> image::DynamicImage {
+    let Some(area) = preview_area else {
+        return img;
+    };
+    // 2x the preview pixel size is plenty of headroom for fit-to-preview encodes.
+    let max_w = ((area.width.max(1) as f32) * font_size.0.max(1) as f32 * 2.0) as u32;
+    let max_h = ((area.height.max(1) as f32) * font_size.1.max(1) as f32 * 2.0) as u32;
+    if img.width() <= max_w && img.height() <= max_h {
+        return img;
+    }
+    img.resize(
+        max_w.max(1),
+        max_h.max(1),
+        image::imageops::FilterType::Triangle,
+    )
 }
 
 /// Reduce an attachment filename to a safe single path component.

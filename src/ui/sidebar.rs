@@ -8,7 +8,7 @@ use ratatui::{
 use ratatui_image::{protocol::StatefulProtocol, Resize, StatefulImage};
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, AssetState, Focus, SidebarTab};
+use crate::app::{App, AssetState, Focus};
 use crate::format::datetime_compact;
 use crate::models::Attachment;
 
@@ -22,8 +22,15 @@ pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
         Color::DarkGray
     };
 
+    let title = Line::from(vec![Span::styled(
+        " Details ",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )]);
+
     let block = Block::default()
-        .title(tab_title(app))
+        .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color));
@@ -34,42 +41,29 @@ pub fn render(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    match app.sidebar_tab {
-        SidebarTab::Metadata => render_metadata(f, app, inner),
-        SidebarTab::Attachments => render_attachments(f, app, inner),
-    }
+    let lines = metadata_lines(app);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(lines.len() as u16),
+            Constraint::Min(3),
+        ])
+        .split(inner);
+
+    f.render_widget(Paragraph::new(lines), chunks[0]);
+    render_attachments(f, app, chunks[1]);
 }
 
-fn tab_title(app: &App) -> Line<'static> {
-    let active = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
-    let inactive = Style::default().fg(Color::DarkGray);
-    let count = app.attachments().len();
-
-    let (meta_style, att_style) = if app.sidebar_tab == SidebarTab::Metadata {
-        (active, inactive)
-    } else {
-        (inactive, active)
-    };
-
-    Line::from(vec![
-        Span::styled(" Metadata ", meta_style),
-        Span::styled("│", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!(" Attachments ({}) ", count), att_style),
-    ])
-}
-
-fn render_metadata(f: &mut Frame, app: &App, area: Rect) {
+fn metadata_lines(app: &App) -> Vec<Line<'static>> {
     let Some(inbox) = &app.current_inbox else {
-        return;
+        return Vec::new();
     };
 
     let label_style = Style::default().fg(Color::DarkGray);
     let value_style = Style::default().fg(Color::White);
     let accent_style = Style::default().fg(Color::Cyan);
 
-    let mut lines = vec![
+    vec![
         kv_line("ID", &inbox.id.to_string(), label_style, accent_style),
         kv_line("Source", inbox.source.as_str(), label_style, accent_style),
         kv_line(
@@ -90,19 +84,15 @@ fn render_metadata(f: &mut Frame, app: &App, area: Rect) {
             label_style,
             value_style,
         ),
-        Line::from(""),
-        Line::from(Span::styled("Summary", label_style)),
-    ];
-
-    let summary = inbox.summary.as_deref().unwrap_or("—");
-    for piece in wrap_plain(summary, area.width.saturating_sub(2) as usize) {
-        lines.push(Line::from(Span::styled(piece, value_style)));
-    }
-
-    f.render_widget(Paragraph::new(lines), area);
+    ]
 }
 
-fn kv_line<'a>(key: &str, value: &str, label_style: Style, value_style: Style) -> Line<'a> {
+fn kv_line(
+    key: &str,
+    value: &str,
+    label_style: Style,
+    value_style: Style,
+) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{:<9}", key), label_style),
         Span::styled(value.to_string(), value_style),
@@ -185,6 +175,7 @@ fn render_image_preview(f: &mut Frame, app: &mut App, id: u64, area: Rect) {
 
     match state_kind {
         1 => {
+            app.set_preview_area(area);
             if let Some(protocol) = ready_protocol_mut(app, id) {
                 let image = StatefulImage::new(None).resize(Resize::Fit(None));
                 f.render_stateful_widget(image, area, protocol);
