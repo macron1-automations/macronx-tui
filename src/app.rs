@@ -20,21 +20,6 @@ pub enum Screen {
     InboxShow,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SidebarTab {
-    Metadata,
-    Attachments,
-}
-
-impl SidebarTab {
-    pub fn next(self) -> Self {
-        match self {
-            SidebarTab::Metadata => SidebarTab::Attachments,
-            SidebarTab::Attachments => SidebarTab::Metadata,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Focus {
     Body,
@@ -122,7 +107,6 @@ pub struct App {
     pub client: ApiClient,
 
     // Sidebar
-    pub sidebar_tab: SidebarTab,
     pub sidebar_visible: bool,
     pub focus: Focus,
     pub selected_attachment: usize,
@@ -176,7 +160,6 @@ impl App {
             status: None,
             should_quit: false,
             client,
-            sidebar_tab: SidebarTab::Metadata,
             sidebar_visible: true,
             focus: Focus::Body,
             selected_attachment: 0,
@@ -258,7 +241,9 @@ impl App {
                 self.pending_play = None;
                 self.current_inbox = Some(inbox);
                 self.body_scroll.scroll_to_top();
-                self.sidebar_tab = SidebarTab::Metadata;
+                if self.sidebar_visible {
+                    self.on_attachment_selected();
+                }
                 self.focus = Focus::Body;
                 self.selected_attachment = 0;
                 self.screen = Screen::InboxShow;
@@ -369,25 +354,24 @@ impl App {
                 }
             }
             KeyCode::Tab => {
+                let entering_sidebar = self.focus == Focus::Body;
                 self.focus = match self.focus {
                     Focus::Body => Focus::Sidebar,
                     Focus::Sidebar => Focus::Body,
                 };
-                self.on_tab_entered();
-            }
-            KeyCode::BackTab => {
-                self.sidebar_tab = self.sidebar_tab.next();
-                self.on_tab_entered();
+                if entering_sidebar {
+                    self.on_attachment_selected();
+                }
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.focus == Focus::Sidebar && self.sidebar_tab == SidebarTab::Attachments {
+                if self.focus == Focus::Sidebar {
                     self.select_next_attachment();
                 } else {
                     self.body_scroll.scroll_down();
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.focus == Focus::Sidebar && self.sidebar_tab == SidebarTab::Attachments {
+                if self.focus == Focus::Sidebar {
                     self.select_prev_attachment();
                 } else {
                     self.body_scroll.scroll_up();
@@ -396,29 +380,11 @@ impl App {
             KeyCode::Left => {
                 if let Some(audio) = &self.audio {
                     audio.seek_back(std::time::Duration::from_secs(5));
-                } else if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
                 }
             }
             KeyCode::Right => {
                 if let Some(audio) = &self.audio {
                     audio.seek_forward(std::time::Duration::from_secs(5));
-                } else if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
-                }
-            }
-            KeyCode::Char('h') => {
-                if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
-                }
-            }
-            KeyCode::Char('l') => {
-                if self.focus == Focus::Sidebar {
-                    self.sidebar_tab = self.sidebar_tab.next();
-                    self.on_tab_entered();
                 }
             }
             KeyCode::PageDown => {
@@ -457,13 +423,6 @@ impl App {
     fn on_attachment_selected(&mut self) {
         if let Some(att) = self.selected_attachment() {
             self.request_attachment(att.id);
-        }
-    }
-
-    /// Kick off lazy downloads when the Attachments tab becomes visible.
-    fn on_tab_entered(&mut self) {
-        if self.sidebar_tab == SidebarTab::Attachments {
-            self.on_attachment_selected();
         }
     }
 
