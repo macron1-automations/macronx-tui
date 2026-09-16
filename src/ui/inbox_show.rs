@@ -92,6 +92,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
             Span::raw("Audio  "),
             Span::styled("[y] ", Style::default().fg(Color::Cyan)),
             Span::raw("Yank  "),
+            if app.selected_attachment_ready() {
+                Span::styled("[o] ", Style::default().fg(Color::Cyan))
+            } else {
+                Span::styled("[o] ", Style::default().fg(Color::DarkGray))
+            },
+            if app.selected_attachment_ready() {
+                Span::raw("Open  ")
+            } else {
+                Span::styled("Open  ", Style::default().fg(Color::DarkGray))
+            },
             Span::styled("[Esc] ", Style::default().fg(Color::Cyan)),
             Span::raw("Back"),
         ])

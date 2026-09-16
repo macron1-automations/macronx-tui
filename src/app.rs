@@ -196,6 +196,14 @@ impl App {
         Some(&attachments[self.selected_attachment.min(attachments.len() - 1)])
     }
 
+    /// True when the selected attachment's bytes are downloaded, so the `o`
+    /// shortcut can open it.
+    pub fn selected_attachment_ready(&self) -> bool {
+        self.selected_attachment()
+            .map(|att| self.raw_bytes.contains_key(&att.id))
+            .unwrap_or(false)
+    }
+
     pub fn load_inboxes(&mut self) {
         match self.client.list_inboxes() {
             Ok(inboxes) => {
