@@ -19,3 +19,4 @@ unicode-width = "0.1"
 ratatui-image = "2.0.1"
 rodio = "0.22"
 image = "0.25"
+arboard = { version = "3", features = ["wayland-data-control"] }

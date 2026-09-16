@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::Mutex;
 
+use arboard::Clipboard;
 use crossterm::event::KeyCode;
 use image::DynamicImage;
 use ratatui::layout::Rect;
@@ -141,6 +142,7 @@ pub struct App {
     pub status: Option<(String, bool)>, // (message, is_error)
     pub should_quit: bool,
     pub client: ApiClient,
+    pub clipboard: Option<Clipboard>,
 
     // Sidebar
     pub sidebar_visible: bool,
@@ -201,6 +203,7 @@ impl App {
             status: None,
             should_quit: false,
             client,
+            clipboard: None,
             sidebar_visible: true,
             focus: Focus::Body,
             selected_attachment: 0,
@@ -375,6 +378,9 @@ impl App {
                     self.open_externally(id);
                 }
             }
+            KeyCode::Char('y') => {
+                self.yank_body();
+            }
             KeyCode::Char(' ') => {
                 self.toggle_audio();
             }
@@ -438,6 +444,41 @@ impl App {
                 self.toggle_sidebar();
             }
             _ => {}
+        }
+    }
+
+    fn yank_body(&mut self) {
+        let Some(body) = self.current_inbox.as_ref().and_then(|i| i.body.clone()) else {
+            self.status = Some(("No body to yank".to_string(), true));
+            return;
+        };
+        // Keep the Clipboard (and its X11/Wayland connection) alive for the app's
+        // lifetime: on Linux the owning process hosts the clipboard contents, so
+        // dropping the context immediately makes the data unavailable to pastes.
+        if self.clipboard.is_none() {
+            match Clipboard::new() {
+                Ok(clipboard) => self.clipboard = Some(clipboard),
+                Err(e) => {
+                    self.status = Some((format!("Yank failed: {}", e), true));
+                    return;
+                }
+            }
+        }
+        let result = self
+            .clipboard
+            .as_mut()
+            .expect("clipboard initialized above")
+            .set_text(body.clone());
+        match result {
+            Ok(()) => {
+                self.status = Some((
+                    format!("Yanked {} characters", body.chars().count()),
+                    false,
+                ));
+            }
+            Err(e) => {
+                self.status = Some((format!("Yank failed: {}", e), true));
+            }
         }
     }
 
