@@ -92,6 +92,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
             Span::raw("Image  "),
             Span::styled("[space] ", Style::default().fg(Color::Cyan)),
             Span::raw("Audio  "),
+            Span::styled("[y] ", Style::default().fg(Color::Cyan)),
+            Span::raw("Yank  "),
             Span::styled("[Esc] ", Style::default().fg(Color::Cyan)),
             Span::raw("Back"),
         ])
