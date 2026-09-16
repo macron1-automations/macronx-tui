@@ -204,6 +204,12 @@ impl App {
             .unwrap_or(false)
     }
 
+    /// True when there is audio that can be played or paused, so the `space`
+    /// shortcut is usable.
+    pub fn has_audio_to_play(&self) -> bool {
+        self.audio.is_some() || self.first_audio_id().is_some()
+    }
+
     pub fn load_inboxes(&mut self) {
         match self.client.list_inboxes() {
             Ok(inboxes) => {
@@ -311,7 +317,9 @@ impl App {
                 self.yank_body();
             }
             KeyCode::Char(' ') => {
-                self.toggle_audio();
+                if self.has_audio_to_play() {
+                    self.toggle_audio();
+                }
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 if let Some(audio) = &self.audio {
