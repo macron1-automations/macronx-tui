@@ -54,11 +54,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Details block
     render_details(f, inbox, chunks[1]);
 
-    // Body + sidebar: scrollable content shrinks by ~20% for the sidebar.
+    // Body + sidebar: scrollable content shrinks by ~30% for the sidebar.
     let body_chunks = if app.sidebar_visible {
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
             .split(chunks[2])
     } else {
         Layout::default()
