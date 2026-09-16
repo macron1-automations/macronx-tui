@@ -175,6 +175,7 @@ fn render_image_preview(f: &mut Frame, app: &mut App, id: u64, area: Rect) {
 
     match state_kind {
         1 => {
+            app.set_preview_area(area);
             if let Some(protocol) = ready_protocol_mut(app, id) {
                 let image = StatefulImage::new(None).resize(Resize::Fit(None));
                 f.render_stateful_widget(image, area, protocol);
