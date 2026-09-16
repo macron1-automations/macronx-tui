@@ -69,8 +69,6 @@ fn run_app(
     app: &mut App,
 ) -> anyhow::Result<()> {
     loop {
-        app.poll_viewer_encode();
-
         terminal.draw(|f| ui::render(f, app))?;
 
         if app.should_quit {

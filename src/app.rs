@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::sync::Mutex;
 
 use arboard::Clipboard;
@@ -53,8 +53,6 @@ impl IndexView {
 pub struct ImageAsset {
     /// Protocol sized for the sidebar preview.
     pub protocol: Box<dyn StatefulProtocol>,
-    /// Original decoded image, rendered fit-to-screen by the fullscreen viewer.
-    pub image: DynamicImage,
 }
 
 pub enum AssetState {
@@ -99,35 +97,6 @@ fn new_resize_protocol(image: DynamicImage) -> Box<dyn StatefulProtocol> {
         .new_resize_protocol(image)
 }
 
-pub struct ImageViewer {
-    pub attachment_id: u64,
-}
-
-struct ViewerRender {
-    width: u16,
-    height: u16,
-    protocol: Box<dyn StatefulProtocol>,
-}
-
-/// Parameters of an in-flight viewer encode job on the worker thread.
-struct ViewerEncode {
-    gen: u64,
-    width: u16,
-    height: u16,
-}
-
-struct ViewerEncodeJob {
-    gen: u64,
-    protocol: Box<dyn StatefulProtocol>,
-    area: Rect,
-}
-
-impl ImageViewer {
-    fn new(attachment_id: u64) -> Self {
-        Self { attachment_id }
-    }
-}
-
 pub struct App {
     pub screen: Screen,
     pub inboxes: Vec<Inbox>,
@@ -152,7 +121,6 @@ pub struct App {
     // Attachments
     pub picker: Picker,
     pub assets: HashMap<u64, AssetState>,
-    pub viewer: Option<ImageViewer>,
     pub audio: Option<AudioPlayer>,
 
     pending_downloads: HashSet<u64>,
@@ -161,29 +129,12 @@ pub struct App {
     raw_bytes: HashMap<u64, Vec<u8>>,
     preview_area: Option<Rect>,
     pending_play: Option<u64>,
-    viewer_pending: Option<u64>,
-    viewer_render: Option<ViewerRender>,
-    viewer_encode: Option<ViewerEncode>,
-    viewer_gen: u64,
-    encode_tx: Sender<ViewerEncodeJob>,
-    encode_rx: Receiver<(u64, Box<dyn StatefulProtocol>)>,
 }
 
 impl App {
     pub fn new(config: Config) -> Self {
         let client = ApiClient::new(&config.base_url, &config.api_token);
         let (download_tx, download_rx) = channel();
-        let (encode_tx, job_rx) = channel::<ViewerEncodeJob>();
-        let (done_tx, encode_rx) = channel();
-
-        // Background worker: resize+encode viewer images off the UI thread.
-        std::thread::spawn(move || {
-            while let Ok(mut job) = job_rx.recv() {
-                job.protocol
-                    .resize_encode(&Resize::Fit(None), None, job.area);
-                let _ = done_tx.send((job.gen, job.protocol));
-            }
-        });
 
         // Keep the shared construction picker synchronized with App's default
         // until `set_picker` swaps in the real one after terminal setup.
@@ -209,7 +160,6 @@ impl App {
             selected_attachment: 0,
             picker: Picker::new((10, 20)),
             assets: HashMap::new(),
-            viewer: None,
             audio: None,
             pending_downloads: HashSet::new(),
             download_tx,
@@ -217,12 +167,6 @@ impl App {
             raw_bytes: HashMap::new(),
             preview_area: None,
             pending_play: None,
-            viewer_pending: None,
-            viewer_render: None,
-            viewer_encode: None,
-            viewer_gen: 0,
-            encode_tx,
-            encode_rx,
         }
     }
 
@@ -273,9 +217,6 @@ impl App {
         match self.client.get_inbox(id) {
             Ok(inbox) => {
                 self.audio = None;
-                self.viewer = None;
-                self.viewer_render = None;
-                self.viewer_pending = None;
                 self.pending_play = None;
                 self.current_inbox = Some(inbox);
                 self.body_scroll.scroll_to_top();
@@ -346,31 +287,11 @@ impl App {
     }
 
     fn handle_show_key(&mut self, key: KeyCode) {
-        // The fullscreen viewer captures all keys while open.
-        if self.viewer.is_some() {
-            match key {
-                KeyCode::Esc | KeyCode::Char('f') | KeyCode::Char('q') | KeyCode::Backspace => {
-                    self.close_viewer();
-                }
-                KeyCode::Char('o') => {
-                    let id = self.viewer.as_ref().map(|v| v.attachment_id);
-                    if let Some(id) = id {
-                        self.open_externally(id);
-                    }
-                }
-                _ => {}
-            }
-            return;
-        }
-
         match key {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Backspace => {
                 self.audio = None;
                 self.screen = Screen::InboxList;
                 self.status = None;
-            }
-            KeyCode::Char('f') => {
-                self.open_image_viewer();
             }
             KeyCode::Char('o') => {
                 if let Some(att) = self.selected_attachment() {
@@ -546,7 +467,7 @@ impl App {
                     AttachmentKind::Image => image::load_from_memory(&bytes)
                         .map(|decoded| {
                             let mut protocol = new_resize_protocol(shrink_for_preview(
-                                decoded.clone(),
+                                decoded,
                                 preview_area,
                                 font_size,
                             ));
@@ -554,10 +475,7 @@ impl App {
                                 protocol.resize_encode(&Resize::Fit(None), None, area);
                             }
                             PreparedDownload::Image {
-                                asset: ImageAsset {
-                                    protocol,
-                                    image: decoded,
-                                },
+                                asset: ImageAsset { protocol },
                                 bytes,
                             }
                         })
@@ -604,58 +522,6 @@ impl App {
             }
             PreparedDownload::Other => {}
         }
-
-        if self.viewer_pending == Some(id) {
-            if matches!(self.assets.get(&id), Some(AssetState::Ready(_))) {
-                self.viewer = Some(ImageViewer::new(id));
-                self.viewer_render = None;
-                self.viewer_encode = None;
-            }
-            self.viewer_pending = None;
-        }
-    }
-
-    pub fn open_image_viewer(&mut self) {
-        let target = match self.selected_attachment() {
-            Some(att) if att.is_image() => Some(att.id),
-            Some(_) => self.first_image_id(),
-            None => self.first_image_id(),
-        };
-
-        let Some(id) = target else {
-            self.status = Some(("No image attachments".into(), false));
-            return;
-        };
-
-        match self.assets.get(&id) {
-            Some(AssetState::Ready(_)) => {
-                self.viewer = Some(ImageViewer::new(id));
-                self.viewer_render = None;
-                self.viewer_encode = None;
-            }
-            Some(AssetState::Failed(err)) => {
-                self.status = Some((err.clone(), true));
-            }
-            _ => {
-                self.request_attachment(id);
-                self.viewer_pending = Some(id);
-                self.status = Some(("Loading image…".into(), false));
-            }
-        }
-    }
-
-    pub fn close_viewer(&mut self) {
-        self.viewer = None;
-        self.viewer_render = None;
-        self.viewer_encode = None;
-        self.viewer_pending = None;
-    }
-
-    fn first_image_id(&self) -> Option<u64> {
-        self.attachments()
-            .iter()
-            .find(|a| a.is_image())
-            .map(|a| a.id)
     }
 
     fn first_audio_id(&self) -> Option<u64> {
@@ -758,65 +624,13 @@ impl App {
     }
 
     pub fn needs_fast_poll(&self) -> bool {
-        if !self.pending_downloads.is_empty()
-            || self.pending_play.is_some()
-            || self.viewer_pending.is_some()
-            || self.viewer_encode.is_some()
-        {
+        if !self.pending_downloads.is_empty() || self.pending_play.is_some() {
             return true;
         }
         if let Some(audio) = &self.audio {
             return !audio.is_paused();
         }
         false
-    }
-
-    pub fn viewer_needs_rebuild(&mut self, width: u16, height: u16) -> bool {
-        if let Some(r) = &self.viewer_render {
-            if r.width == width && r.height == height {
-                return false;
-            }
-        }
-        if let Some(e) = &self.viewer_encode {
-            if e.width == width && e.height == height {
-                return false;
-            }
-        }
-        self.viewer_render = None;
-        true
-    }
-
-    /// Hand a freshly built protocol to the worker thread for resize+encode.
-    pub fn begin_viewer_encode(&mut self, width: u16, height: u16, image: DynamicImage) {
-        self.viewer_gen += 1;
-        let gen = self.viewer_gen;
-        let protocol = new_resize_protocol(image);
-        let _ = self.encode_tx.send(ViewerEncodeJob {
-            gen,
-            protocol,
-            area: Rect::new(0, 0, width, height),
-        });
-        self.viewer_encode = Some(ViewerEncode { gen, width, height });
-    }
-
-    /// Collect finished encodes from the worker, dropping stale generations.
-    pub fn poll_viewer_encode(&mut self) {
-        while let Ok((gen, protocol)) = self.encode_rx.try_recv() {
-            let current = self.viewer_encode.as_ref().is_some_and(|e| e.gen == gen);
-            if current {
-                if let Some(e) = self.viewer_encode.take() {
-                    self.viewer_render = Some(ViewerRender {
-                        width: e.width,
-                        height: e.height,
-                        protocol,
-                    });
-                }
-            }
-        }
-    }
-
-    pub fn viewer_protocol_mut(&mut self) -> Option<&mut Box<dyn StatefulProtocol>> {
-        self.viewer_render.as_mut().map(|r| &mut r.protocol)
     }
 
     fn refresh_tags(&mut self) {

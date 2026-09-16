@@ -1,4 +1,3 @@
-mod image_viewer;
 mod inbox_list;
 mod inbox_show;
 mod sidebar;

@@ -48,8 +48,7 @@ cargo run
 | `G` | Scroll body to bottom |
 | `Tab` | Toggle focus between body and sidebar |
 | `u` | Toggle sidebar visibility |
-| `f` | Open fullscreen image viewer for the attached image |
-| `o` | Open selected attachment with the system's default app (also works in the image viewer) |
+| `o` | Open selected attachment with the system's default app |
 | `space` | Play / pause attached audio |
 | `←` / `→` | Seek audio ±5s |
 | `+` / `-` | Audio volume |
@@ -60,13 +59,6 @@ cargo run
 The detail view splits the body area into a main scrollable column (~80%) and a sidebar (~20%). The sidebar shows metadata fields — id, source, tag, creation time, and attachment count — with the attachments list rendered directly beneath them in the same pane:
 
 - Attachment rows show a type tag (`[IMG]`, `[AUD]`, `[FILE]`) and size. Selecting an image lazily downloads and previews it inline; selecting an audio file shows an inline mini-player with elapsed/total time, a waveform overview with playhead, and a live level visualization. Only the selected attachment is downloaded, so the sidebar stays lazy.
-
-### Image Viewer
-
-Pressing `f` anywhere in the detail view opens the attached image fullscreen (fit to screen). Then:
-
-- `o` opens the original file with the system's default image app
-- `f` or `Esc` closes
 
 Images render through native terminal graphics protocols (Kitty, iTerm2, Sixel) via `ratatui-image`, falling back to unicode halfblocks on terminals without graphics support.
 

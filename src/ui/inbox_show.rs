@@ -12,7 +12,7 @@ use crate::app::App;
 use crate::format::datetime_long;
 use crate::models::Inbox;
 
-use super::{image_viewer, sidebar};
+use super::sidebar;
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let inbox = match &app.current_inbox {
@@ -88,8 +88,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
             Span::raw("Sidebar  "),
             Span::styled("[u] ", Style::default().fg(Color::Cyan)),
             Span::raw("Toggle  "),
-            Span::styled("[f] ", Style::default().fg(Color::Cyan)),
-            Span::raw("Image  "),
             Span::styled("[space] ", Style::default().fg(Color::Cyan)),
             Span::raw("Audio  "),
             Span::styled("[y] ", Style::default().fg(Color::Cyan)),
@@ -101,11 +99,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let status_bar = Paragraph::new(status_text).style(Style::default().bg(Color::Black));
     f.render_widget(status_bar, chunks[3]);
-
-    // Fullscreen image viewer overlays everything.
-    if app.viewer.is_some() {
-        image_viewer::render(f, app);
-    }
 }
 
 fn render_details(f: &mut Frame, inbox: &Inbox, area: Rect) {
