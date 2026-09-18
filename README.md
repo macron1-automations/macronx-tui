@@ -10,7 +10,6 @@ MacronX aggregates intelligence signals across news feeds, social platforms, aud
 ![Inbox View](docs/inbox_screenshot.png)
 
 ### Detail View
-![Detail View](docs/detail_screenshot.png)
 
 ## Key Features
 
@@ -62,7 +61,9 @@ cargo run
 | `+` / `-` | Audio volume |
 | `q` | Quit |
 
-## Detail View Sidebar
+## Detail View
+
+![Detail View](docs/detail_screenshot.png)
 
 The detail view splits the body area into a main scrollable column (~80%) and a sidebar (~20%). The sidebar shows metadata fields — id, source, tag, creation time, and attachment count — with the attachments list rendered directly beneath them in the same pane:
 
@@ -87,19 +88,6 @@ The detail screen renders the inbox body with a small, dependency-free markdown 
 Inline `**` is parsed before word-wrapping, so an emphasized phrase that wraps across two rows stays bold with no markers reappearing at the seam. An unmatched `**` (no closing pair on the same line) is shown literally. The raw `#`, `>`, and fence markers stay visible; only `**` is stripped.
 
 Word-wrapping is width-aware (via `unicode-width`), and the body scrolls vertically with `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`.
-
-## Terminal Performance
-
-The interface is built to feel fast. For the best experience, use a modern GPU-rendered terminal such as [Ghostty](https://ghostty.org/), especially when working with large inbox lists or dense JSON payloads.
-
-## Configuration
-
-`macronx-tui` reads configuration from environment variables:
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `MACRONX_API_TOKEN` | Yes | none | Bearer token sent to the Macronx API |
-| `MACRONX_API_URL` | No | `http://localhost:5000` | Base URL for the Macronx API |
 
 ## Related Documentation
 
