@@ -113,6 +113,10 @@ pub fn render(f: &mut Frame, app: &App) {
         };
         Line::from(Span::styled(format!(" {}", msg), style))
     } else {
+        let archive_action = match app.index_view {
+            crate::app::IndexView::Processed => "Archive  ",
+            crate::app::IndexView::Archived => "Unarchive  ",
+        };
         Line::from(vec![
             Span::styled(" [j/k] ", Style::default().fg(Color::Cyan)),
             Span::raw("Navigate  "),
@@ -120,6 +124,8 @@ pub fn render(f: &mut Frame, app: &App) {
             Span::raw("Tags  "),
             Span::styled("[Enter] ", Style::default().fg(Color::Cyan)),
             Span::raw("Open  "),
+            Span::styled("[a] ", Style::default().fg(Color::Cyan)),
+            Span::raw(archive_action),
             Span::styled("[t] ", Style::default().fg(Color::Cyan)),
             Span::raw("View  "),
             Span::styled("[r] ", Style::default().fg(Color::Cyan)),
