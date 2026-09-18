@@ -1,4 +1,5 @@
 # macronx-tui
+![MacronX TUI logo](docs/logo.jpeg)
 
 A terminal user interface counterpart to [macronx](https://github.com/ninja-in-brazil/macronx).
 
@@ -38,6 +39,7 @@ cargo run
 | `Shift+J` | Filter by next tag |
 | `Shift+K` | Filter by previous tag |
 | `Enter` | Open selected inbox |
+| `a` | archive/unarchive selected inbox |
 | `r` | Refresh inboxes |
 | `t` | Toggle between processed and archived views |
 | `Esc` / `Backspace` | Return from detail screen |
