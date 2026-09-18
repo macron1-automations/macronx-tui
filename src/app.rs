@@ -248,6 +248,43 @@ impl App {
         }
     }
 
+    pub fn toggle_archive_selected(&mut self) {
+        if self.filtered.is_empty() {
+            return;
+        }
+        let inbox_idx = self.filtered[self.selected];
+        let id = self.inboxes[inbox_idx].id;
+        let name = self.inboxes[inbox_idx].name.clone();
+        let display_name = if name.is_empty() {
+            format!("item #{}", id)
+        } else {
+            format!("'{}'", name)
+        };
+
+        match self.index_view {
+            IndexView::Processed => match self.client.archive_inbox(id) {
+                Ok(updated) => {
+                    self.inboxes[inbox_idx] = updated;
+                    self.rebuild_tags();
+                    self.status = Some((format!("Archived {}", display_name), false));
+                }
+                Err(e) => {
+                    self.status = Some((format!("Error archiving inbox: {}", e), true));
+                }
+            },
+            IndexView::Archived => match self.client.unarchive_inbox(id) {
+                Ok(updated) => {
+                    self.inboxes[inbox_idx] = updated;
+                    self.rebuild_tags();
+                    self.status = Some((format!("Unarchived {}", display_name), false));
+                }
+                Err(e) => {
+                    self.status = Some((format!("Error unarchiving inbox: {}", e), true));
+                }
+            },
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyCode) {
         // Clear non-error status on any keypress
         if let Some((_, false)) = &self.status {
@@ -289,6 +326,9 @@ impl App {
             }
             KeyCode::Enter => {
                 self.open_selected_inbox();
+            }
+            KeyCode::Char('a') => {
+                self.toggle_archive_selected();
             }
             KeyCode::Char('r') => {
                 self.load_inboxes();
@@ -714,6 +754,8 @@ impl App {
 
         if !self.filtered.is_empty() && self.selected >= self.filtered.len() {
             self.selected = self.filtered.len() - 1;
+        } else if self.filtered.is_empty() {
+            self.selected = 0;
         }
     }
 
@@ -891,5 +933,56 @@ mod tests {
 
         app.handle_list_key(KeyCode::Char('t'));
         assert_eq!(app.filtered, vec![2]);
+    }
+
+    #[test]
+    fn a_key_attempts_archive_in_processed_view() {
+        let mut app = test_app();
+        app.inboxes = vec![inbox(1, true, false, None)];
+        app.rebuild_tags();
+        assert_eq!(app.filtered, vec![0]);
+
+        app.handle_list_key(KeyCode::Char('a'));
+        // In unit tests with no running backend, it should attempt the call and report error status
+        let (msg, is_error) = app.status.as_ref().expect("status should be set");
+        assert!(is_error);
+        assert!(msg.starts_with("Error archiving inbox:"));
+    }
+
+    #[test]
+    fn a_key_attempts_unarchive_in_archived_view() {
+        let mut app = test_app();
+        app.inboxes = vec![inbox(1, true, true, None)];
+        app.index_view = IndexView::Archived;
+        app.rebuild_tags();
+        assert_eq!(app.filtered, vec![0]);
+
+        app.handle_list_key(KeyCode::Char('a'));
+        // In unit tests with no running backend, it should attempt the call and report error status
+        let (msg, is_error) = app.status.as_ref().expect("status should be set");
+        assert!(is_error);
+        assert!(msg.starts_with("Error unarchiving inbox:"));
+    }
+
+    #[test]
+    fn archiving_item_removes_from_processed_and_clamps_selection() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, None),
+            inbox(2, true, false, None),
+        ];
+        app.rebuild_tags();
+        assert_eq!(app.filtered, vec![0, 1]);
+
+        // Select the second item
+        app.selected = 1;
+
+        // Simulate successful archive of inbox #2
+        app.inboxes[1].archived = true;
+        app.rebuild_tags();
+
+        assert_eq!(app.filtered, vec![0]);
+        // Clamped to 0
+        assert_eq!(app.selected, 0);
     }
 }

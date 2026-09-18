@@ -73,6 +73,36 @@ impl ApiClient {
         parse_json_response(resp, "inbox")
     }
 
+    pub fn archive_inbox(&self, id: u64) -> Result<Inbox> {
+        let url = format!("{}/api/v1/inboxes/{}/archive", self.base_url, id);
+        let resp = self
+            .client
+            .patch(&url)
+            .send()
+            .context("Failed to connect to API")?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("API returned {}", resp.status());
+        }
+
+        parse_json_response(resp, "inbox")
+    }
+
+    pub fn unarchive_inbox(&self, id: u64) -> Result<Inbox> {
+        let url = format!("{}/api/v1/inboxes/{}/unarchive", self.base_url, id);
+        let resp = self
+            .client
+            .patch(&url)
+            .send()
+            .context("Failed to connect to API")?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("API returned {}", resp.status());
+        }
+
+        parse_json_response(resp, "inbox")
+    }
+
     pub fn fetch_bytes(&self, url: &str) -> Result<Vec<u8>> {
         let resp = self
             .client
