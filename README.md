@@ -1,18 +1,21 @@
 # macronx-tui
 ![MacronX TUI logo](docs/logo.jpeg)
 
-A terminal user interface counterpart to [macronx](https://github.com/ninja-in-brazil/macronx).
+A fast, keyboard-driven terminal user interface for [MacronX](https://github.com/macron1-automations/macronx) — a personal Open-Source Intelligence (OSINT) intake and analysis pipeline.
 
-`macronx-tui` is designed for fast, keyboard-driven work against Macronx. The initial focus is inbox workflows: listing inboxes, inspecting inbox details, and refreshing the inbox list.
+MacronX aggregates intelligence signals across news feeds, social platforms, audio intercepts, and field imagery, synthesizing them via local or cloud LLM workflows into structured briefs. `macronx-tui` provides a rapid, distraction-free environment for analysts to review generated intelligence artifacts, inspect multimedia context, and triage inbox items entirely from the terminal.
 
-## Status
+## Key Features
 
-Early, focused, and intentionally small. The current TUI is useful for processing inbox workflows and will grow alongside the Macronx API surface.
+- **Fast Inbox Triage & Tag Filtering**: Quickly navigate processed or archived inboxes, cycle through tags (`Shift+J` / `Shift+K`), and archive/unarchive (`a`) items with single keystrokes.
+- **Executive Intelligence Briefs via Markdown**: Inspect synthesized reports, trend analyses, and transcripts rendered with width-aware word-wrapping and syntax highlighting.
+- **Image Intelligence (IMINT) Inline Previews**: Lazily preview attached field photos, charts, and diagrams directly inside the terminal using native graphics protocols (Kitty, iTerm2, Sixel).
+- **Audio Intercept Playback**: Play, pause, seek, and adjust volume on audio attachments with an interactive waveform overview and live level visualization without leaving the inbox.
 
 ## Requirements
 
 - Rust 2021 toolchain
-- A running Macronx API
+- A running [MacronX](https://github.com/macron1-automations/macronx) API
 - `MACRONX_API_TOKEN` set in your environment
 
 Optional:
@@ -39,7 +42,7 @@ cargo run
 | `Shift+J` | Filter by next tag |
 | `Shift+K` | Filter by previous tag |
 | `Enter` | Open selected inbox |
-| `a` | archive/unarchive selected inbox |
+| `a` | Archive/unarchive selected inbox |
 | `r` | Refresh inboxes |
 | `t` | Toggle between processed and archived views |
 | `Esc` / `Backspace` | Return from detail screen |
@@ -94,3 +97,11 @@ The interface is built to feel fast. For the best experience, use a modern GPU-r
 | --- | --- | --- | --- |
 | `MACRONX_API_TOKEN` | Yes | none | Bearer token sent to the Macronx API |
 | `MACRONX_API_URL` | No | `http://localhost:5000` | Base URL for the Macronx API |
+
+## Related Documentation
+
+- **[MacronX Backend Repository](https://github.com/macron1-automations/macronx)**: The primary intake and analysis pipeline.
+- **[Setup & Configuration](https://github.com/macron1-automations/macronx/blob/main/docs/SETUP.md)**: Local development, LLM configuration, database setup, and security notes.
+- **[Daily RSS Feed Digest](https://github.com/macron1-automations/macronx/blob/main/docs/RSS_FEEDS.md)**: Digest schedules and automated news analysis workflows.
+- **[Audio Transcription](https://github.com/macron1-automations/macronx/blob/main/docs/AUDIO_TRANSCRIPTS.md)**: Supported audio formats and automated Whisper transcription.
+- **[API Ingestion](https://github.com/macron1-automations/macronx/blob/main/docs/API.md)**: API endpoints, payload structures, and ingestion tokens.
