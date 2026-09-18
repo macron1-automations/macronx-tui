@@ -697,20 +697,29 @@ impl App {
     fn rebuild_tags(&mut self) {
         let selected = self.selected_tag_name().map(|s| s.to_string());
 
-        let mut tags = self.api_tags.clone();
+        // Only include tags that exist on inboxes matching the active index view.
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut tags = Vec::new();
 
-        // Union in any tags seen on inboxes that are not yet listed.
-        let mut names: HashSet<String> = tags.iter().map(|t| t.name.to_lowercase()).collect();
         for inbox in &self.inboxes {
             if !self.index_view.matches(inbox) {
                 continue;
             }
             if let Some(name) = inbox.tag.as_deref() {
-                if !name.trim().is_empty() && names.insert(name.to_lowercase()) {
-                    tags.push(Tag {
-                        name: name.to_string(),
-                        color: None,
-                    });
+                let trimmed = name.trim();
+                if !trimmed.is_empty() && seen.insert(trimmed.to_lowercase()) {
+                    if let Some(api_tag) = self
+                        .api_tags
+                        .iter()
+                        .find(|t| t.name.eq_ignore_ascii_case(trimmed))
+                    {
+                        tags.push(api_tag.clone());
+                    } else {
+                        tags.push(Tag {
+                            name: trimmed.to_string(),
+                            color: None,
+                        });
+                    }
                 }
             }
         }
@@ -984,5 +993,70 @@ mod tests {
         assert_eq!(app.filtered, vec![0]);
         // Clamped to 0
         assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn tags_dynamically_filter_by_active_view() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, Some("dev")),
+            inbox(2, true, false, Some("news")),
+            inbox(3, true, true, Some("audio-research")),
+            inbox(4, false, true, Some("audio-research")),
+        ];
+        app.api_tags = vec![
+            Tag { name: "dev".into(), color: Some("blue".into()) },
+            Tag { name: "news".into(), color: Some("green".into()) },
+            Tag { name: "audio-research".into(), color: Some("purple".into()) },
+            Tag { name: "empty-tag".into(), color: None },
+        ];
+        app.rebuild_tags();
+
+        // In Processed view, only tags with processed items should appear
+        let tag_names: Vec<&str> = app.tags.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(tag_names, vec!["dev", "news"]);
+        // Metadata/colors preserved from api_tags
+        assert_eq!(app.tags[0].color.as_deref(), Some("blue"));
+        assert_eq!(app.tags[1].color.as_deref(), Some("green"));
+
+        // Toggle to Archived view
+        app.handle_list_key(KeyCode::Char('t'));
+        let archived_tag_names: Vec<&str> = app.tags.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(archived_tag_names, vec!["audio-research"]);
+        assert_eq!(app.tags[0].color.as_deref(), Some("purple"));
+    }
+
+    #[test]
+    fn tag_selection_retention_and_fallback_on_toggle() {
+        let mut app = test_app();
+        app.inboxes = vec![
+            inbox(1, true, false, Some("common")),
+            inbox(2, true, false, Some("processed-only")),
+            inbox(3, true, true, Some("common")),
+            inbox(4, true, true, Some("archived-only")),
+        ];
+        app.api_tags = vec![
+            Tag { name: "common".into(), color: None },
+            Tag { name: "processed-only".into(), color: None },
+            Tag { name: "archived-only".into(), color: None },
+        ];
+        app.rebuild_tags();
+
+        // Select "common" tag in Processed view
+        app.selected_tag = app.tags.iter().position(|t| t.name == "common");
+        assert_eq!(app.selected_tag_name(), Some("common"));
+
+        // Toggle to Archived view: "common" exists in Archived too, so it remains selected
+        app.handle_list_key(KeyCode::Char('t'));
+        assert_eq!(app.selected_tag_name(), Some("common"));
+
+        // Select "archived-only" in Archived view
+        app.selected_tag = app.tags.iter().position(|t| t.name == "archived-only");
+        assert_eq!(app.selected_tag_name(), Some("archived-only"));
+
+        // Toggle to Processed view: "archived-only" does not exist in Processed, falls back to "All" (None)
+        app.handle_list_key(KeyCode::Char('t'));
+        assert_eq!(app.selected_tag, None);
+        assert_eq!(app.selected_tag_name(), None);
     }
 }
