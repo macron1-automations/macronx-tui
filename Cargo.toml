@@ -1,7 +1,12 @@
 [package]
 name = "macronx-tui"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+description = "A fast, keyboard-driven terminal user interface for MacronX OSINT pipeline"
+license = "MIT"
+repository = "https://github.com/macron1-automations/macronx-tui"
+documentation = "https://github.com/macron1-automations/macronx-tui"
+homepage = "https://github.com/macron1-automations/macronx-tui"
 
 [[bin]]
 name = "macronx-tui"
