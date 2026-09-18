@@ -3,7 +3,14 @@
 
 A fast, keyboard-driven terminal user interface for [MacronX](https://github.com/macron1-automations/macronx) — a personal Open-Source Intelligence (OSINT) intake and analysis pipeline.
 
-MacronX aggregates intelligence signals across news feeds, social platforms, audio intercepts, and field imagery, synthesizing them via local or cloud LLM workflows into structured briefs. `macronx-tui` provides a rapid, distraction-free environment for analysts to review generated intelligence artifacts, inspect multimedia context, and triage inbox items entirely from the terminal.
+MacronX aggregates intelligence signals across news feeds, social platforms, audio intercepts, and field imagery, synthesizing them via local LLM workflows into structured briefs. `macronx-tui` provides a rapid, distraction-free environment for analysts to review generated intelligence artifacts, inspect multimedia context, and triage inbox items entirely from the terminal.
+
+## Screenshots
+### Inbox View
+![Inbox View](docs/inbox_screenshot.png)
+
+### Detail View
+![Detail View](docs/detail_screenshot.png)
 
 ## Key Features
 
@@ -16,11 +23,7 @@ MacronX aggregates intelligence signals across news feeds, social platforms, aud
 
 - Rust 2021 toolchain
 - A running [MacronX](https://github.com/macron1-automations/macronx) API
-- `MACRONX_API_TOKEN` set in your environment
-
-Optional:
-
-- `MACRONX_API_URL`, if the API is not running at `http://localhost:5000`
+- `MACRONX_API_TOKEN` and `MACRONX_API_URL` set in your environment
 
 ## Usage
 
